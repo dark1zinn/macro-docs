@@ -32,6 +32,10 @@ macro_event_topics = { path = "../../../../crates/macro_event_topics", optional 
 # (behind `local-stack`) so plain xtask builds don't spend time compiling the
 # bundled static librdkafka dependency.
 rdkafka = { workspace = true, optional = true }
+# MacroDB's compiled-in migrations and a Postgres pool to apply them, for the
+# self-host init container (behind `selfhost`).
+macro_db_migrator = { path = "../../../../crates/macro_db_migrator", optional = true }
+sqlx = { workspace = true, optional = true }
 # Typed docker-compose model (build the override as structs, not strings) +
 # Docker Engine API client for the discrete container/image ops.
 bollard = "0.21"
@@ -65,3 +69,6 @@ tempfile = { workspace = true }
 # default so a plain build avoids compiling bundled librdkafka; the just recipes
 # enable it.
 local-stack = ["dep:macro_event_topics", "dep:rdkafka"]
+# `selfhost-init`: bootstrap and provisioning for the self-host compose stack,
+# built into its init image.
+selfhost = ["local-stack", "dep:macro_db_migrator", "dep:sqlx"]
