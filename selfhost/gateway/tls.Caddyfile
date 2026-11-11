@@ -1,0 +1,10 @@
+# The `https` profile: automatic Let's Encrypt certificates for MACRO_DOMAIN
+# (and MACRO_AUTH_DOMAIN with the `sso` profile), in front of the gateway.
+# Leave this profile off when Coolify or another proxy terminates TLS.
+{
+	admin off
+}
+
+{$MACRO_DOMAIN} {$MACRO_AUTH_DOMAIN} {
+	reverse_proxy gateway:80
+}
