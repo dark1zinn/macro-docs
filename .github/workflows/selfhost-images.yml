@@ -1,0 +1,204 @@
+# DO NOT EDIT — regenerate with `cargo x workflows` (from the repository root).
+# Source: tooling/xtask/crates/xtask_workflows/src/workflows/selfhost_images.rs
+name: Self-host images
+'on':
+  push:
+    branches:
+    - development
+    tags:
+    - selfhost-v*
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  rust:
+    name: Rust services and init
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    timeout-minutes: 360
+    steps:
+    - name: Checkout
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      with:
+        clean: 'false'
+        persist-credentials: 'false'
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+        docker system prune -af
+        df -h /
+    - id: prefix
+      name: Image prefix
+      run: |
+        echo "prefix=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/macro-selfhost" >> "$GITHUB_OUTPUT"
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+    - name: Log in to GHCR
+      uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Build and push services
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+      with:
+        context: '.'
+        file: selfhost/docker/rust.Dockerfile
+        platforms: linux/amd64
+        push: 'true'
+        tags: |-
+          ${{ steps.prefix.outputs.prefix }}-services:${{ github.ref_name }}
+          ${{ steps.prefix.outputs.prefix }}-services:sha-${{ github.sha }}
+        cache-from: type=gha,scope=selfhost-docker-rust.Dockerfile
+        cache-to: type=gha,scope=selfhost-docker-rust.Dockerfile,mode=max
+        target: services
+    - name: Build and push init
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+      with:
+        context: '.'
+        file: selfhost/docker/rust.Dockerfile
+        platforms: linux/amd64
+        push: 'true'
+        tags: |-
+          ${{ steps.prefix.outputs.prefix }}-init:${{ github.ref_name }}
+          ${{ steps.prefix.outputs.prefix }}-init:sha-${{ github.sha }}
+        cache-from: type=gha,scope=selfhost-docker-rust.Dockerfile
+        cache-to: type=gha,scope=selfhost-docker-rust.Dockerfile,mode=max
+        target: init
+  gateway:
+    name: Gateway and web app
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    timeout-minutes: 360
+    steps:
+    - name: Checkout
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      with:
+        clean: 'false'
+        persist-credentials: 'false'
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+        docker system prune -af
+        df -h /
+    - id: prefix
+      name: Image prefix
+      run: |
+        echo "prefix=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/macro-selfhost" >> "$GITHUB_OUTPUT"
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+    - name: Log in to GHCR
+      uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Build and push gateway
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+      with:
+        context: '.'
+        file: selfhost/docker/gateway.Dockerfile
+        platforms: linux/amd64
+        push: 'true'
+        tags: |-
+          ${{ steps.prefix.outputs.prefix }}-gateway:${{ github.ref_name }}
+          ${{ steps.prefix.outputs.prefix }}-gateway:sha-${{ github.sha }}
+        cache-from: type=gha,scope=selfhost-docker-gateway.Dockerfile
+        cache-to: type=gha,scope=selfhost-docker-gateway.Dockerfile,mode=max
+  workers:
+    name: Workers and search
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    timeout-minutes: 360
+    steps:
+    - name: Checkout
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      with:
+        clean: 'false'
+        persist-credentials: 'false'
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+        docker system prune -af
+        df -h /
+    - id: prefix
+      name: Image prefix
+      run: |
+        echo "prefix=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/macro-selfhost" >> "$GITHUB_OUTPUT"
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+    - name: Log in to GHCR
+      uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Build and push sync
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+      with:
+        context: '.'
+        file: docker/sync-service.Dockerfile
+        platforms: linux/amd64
+        push: 'true'
+        tags: |-
+          ${{ steps.prefix.outputs.prefix }}-sync:${{ github.ref_name }}
+          ${{ steps.prefix.outputs.prefix }}-sync:sha-${{ github.sha }}
+        cache-from: type=gha,scope=docker-sync-service.Dockerfile
+        cache-to: type=gha,scope=docker-sync-service.Dockerfile,mode=max
+    - name: Build and push lexical
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+      with:
+        context: '.'
+        file: docker/lexical-service.Dockerfile
+        platforms: linux/amd64
+        push: 'true'
+        tags: |-
+          ${{ steps.prefix.outputs.prefix }}-lexical:${{ github.ref_name }}
+          ${{ steps.prefix.outputs.prefix }}-lexical:sha-${{ github.sha }}
+        cache-from: type=gha,scope=docker-lexical-service.Dockerfile
+        cache-to: type=gha,scope=docker-lexical-service.Dockerfile,mode=max
+    - name: Build and push websocket
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+      with:
+        context: '.'
+        file: docker/websocket-service.Dockerfile
+        platforms: linux/amd64
+        push: 'true'
+        tags: |-
+          ${{ steps.prefix.outputs.prefix }}-websocket:${{ github.ref_name }}
+          ${{ steps.prefix.outputs.prefix }}-websocket:sha-${{ github.sha }}
+        cache-from: type=gha,scope=docker-websocket-service.Dockerfile
+        cache-to: type=gha,scope=docker-websocket-service.Dockerfile,mode=max
+    - name: Build and push ai-editing
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+      with:
+        context: '.'
+        file: selfhost/docker/ai-editing-worker.Dockerfile
+        platforms: linux/amd64
+        push: 'true'
+        tags: |-
+          ${{ steps.prefix.outputs.prefix }}-ai-editing:${{ github.ref_name }}
+          ${{ steps.prefix.outputs.prefix }}-ai-editing:sha-${{ github.sha }}
+        cache-from: type=gha,scope=selfhost-docker-ai-editing-worker.Dockerfile
+        cache-to: type=gha,scope=selfhost-docker-ai-editing-worker.Dockerfile,mode=max
+    - name: Build and push opensearch
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+      with:
+        context: infra/local/opensearch
+        file: infra/local/opensearch/Dockerfile
+        platforms: linux/amd64
+        push: 'true'
+        tags: |-
+          ${{ steps.prefix.outputs.prefix }}-opensearch:${{ github.ref_name }}
+          ${{ steps.prefix.outputs.prefix }}-opensearch:sha-${{ github.sha }}
+        cache-from: type=gha,scope=infra-local-opensearch-Dockerfile
+        cache-to: type=gha,scope=infra-local-opensearch-Dockerfile,mode=max
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
