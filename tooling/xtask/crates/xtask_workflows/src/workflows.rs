@@ -71,6 +71,7 @@ mod reusable_deploy_service;
 mod reusable_preview_service;
 mod runners;
 mod sdk_check;
+mod selfhost_images;
 mod steps;
 mod test_macrod_update;
 mod vars;
@@ -495,6 +496,11 @@ const WORKFLOWS: &[WorkflowFile] = &[
         slug: "sdk_check",
         file_name: "sdk-check.yml",
         render_yaml: || render_gh_workflow(sdk_check::sdk_check)(),
+    },
+    WorkflowFile {
+        slug: "selfhost_images",
+        file_name: "selfhost-images.yml",
+        render_yaml: || render_gh_workflow(selfhost_images::selfhost_images)(),
     },
 ];
 
