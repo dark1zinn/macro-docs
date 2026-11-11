@@ -123,7 +123,10 @@ function proxyServers(): Servers | undefined {
   if (!proxyOrigin || !wsProxyOrigin) return undefined;
   return {
     'auth-service': `${proxyOrigin}/auth`,
-    'auth-logout': serverHostLocal['auth-logout'],
+    // The session is already gone server-side; land on this origin's login
+    // page (under the bundle's base) rather than a fixed dev-server port
+    // nothing serves here.
+    'auth-logout': `${proxyOrigin}${import.meta.env.BASE_URL.replace(/\/?$/, '/')}login`,
     'pdf-service': serverHostLocal['pdf-service'], // no local container
     'document-storage-service': `${proxyOrigin}/dss`,
     'websocket-service': `${wsProxyOrigin}/websocket`,
