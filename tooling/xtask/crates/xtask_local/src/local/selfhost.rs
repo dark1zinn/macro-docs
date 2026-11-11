@@ -27,6 +27,9 @@ use serde_json::{Value, json};
 
 use super::{identity, kafka, kickstart, localstack};
 
+/// Keeps `docker-compose.yml` and the gateway in step with the local stack.
+#[cfg(test)]
+mod drift;
 #[cfg(test)]
 mod test;
 
