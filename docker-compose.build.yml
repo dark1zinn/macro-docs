@@ -1,0 +1,50 @@
+# Build the self-host images from this checkout instead of pulling them:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml build
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d
+#
+# Each image is built once, by the first service that uses it; the services
+# sharing an image reuse its tag. The Rust and web builds need ~16 GB of RAM.
+services:
+  authentication-service:
+    build:
+      context: .
+      dockerfile: selfhost/docker/rust.Dockerfile
+      target: services
+
+  bootstrap:
+    build:
+      context: .
+      dockerfile: selfhost/docker/rust.Dockerfile
+      target: init
+
+  gateway:
+    build:
+      context: .
+      dockerfile: selfhost/docker/gateway.Dockerfile
+
+  sync_service:
+    build:
+      context: .
+      dockerfile: docker/sync-service.Dockerfile
+
+  lexical_service:
+    build:
+      context: .
+      dockerfile: docker/lexical-service.Dockerfile
+      args:
+        GITHUB_PACKAGES_TOKEN: ""
+
+  websocket_service:
+    build:
+      context: .
+      dockerfile: docker/websocket-service.Dockerfile
+
+  ai_editing_worker:
+    build:
+      context: .
+      dockerfile: selfhost/docker/ai-editing-worker.Dockerfile
+
+  search:
+    build:
+      context: infra/local/opensearch
