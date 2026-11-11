@@ -1,0 +1,188 @@
+# The self-host gateway: the only container with a published port.
+#
+# Plain HTTP on :80. TLS is terminated in front of it, by Coolify/Traefik, any
+# reverse proxy, or this stack's own `https` profile (tls.Caddyfile). The app
+# needs HTTPS: its session cookies are `Secure`.
+#
+# One origin serves the app bundle and every API under a path prefix. The
+# routes mirror the local stack's proxy
+# (tooling/xtask/crates/xtask_local/src/local/proxy.rs); a test keeps them in
+# step (tooling/xtask/crates/xtask_local/src/local/selfhost/test.rs).
+#
+# Everything sits inside one `route` so it runs in the order written. A route
+# whose service is not running (its compose profile is off) answers 503.
+{
+	admin off
+	auto_https off
+	servers {
+		# Coolify, Traefik and the https profile forward the client's scheme.
+		trusted_proxies static private_ranges
+	}
+}
+
+:80 {
+	encode zstd gzip
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	route {
+		# FusionAuth's hosted OAuth pages, for Google/GitHub sign-in (the `sso`
+		# profile). Only on its own hostname: FusionAuth builds absolute URLs
+		# from the host it is reached on. Its admin UI and API stay private.
+		@auth_host host {$MACRO_AUTH_DOMAIN:auth.invalid}
+		handle @auth_host {
+			@fusionauth_public path /oauth2/* /css/* /js/* /images/* /fonts/* /favicon.ico /.well-known/openid-configuration /.well-known/jwks.json
+			handle @fusionauth_public {
+				reverse_proxy fusionauth:9011
+			}
+			respond 404
+		}
+
+		handle /_healthz {
+			respond "ok" 200
+		}
+
+		# --- Rust services (the local inventory's path prefixes) -----------
+		handle_path /auth/* {
+			reverse_proxy authentication-service:8080
+		}
+		@connection_gateway path /connection-gateway /connection-gateway/*
+		handle @connection_gateway {
+			uri strip_prefix /connection-gateway
+			reverse_proxy connection_gateway:8080
+		}
+		handle_path /contacts/* {
+			reverse_proxy contacts_service:8080
+		}
+		handle_path /dss/* {
+			reverse_proxy document_storage_service:8080
+		}
+		handle_path /email/* {
+			reverse_proxy email_service:8080
+		}
+		handle_path /calendar/* {
+			reverse_proxy calendar_service:8080
+		}
+		handle_path /notification/* {
+			reverse_proxy notification_service:8080
+		}
+		handle_path /unfurl/* {
+			reverse_proxy unfurl_service:8080
+		}
+		handle_path /image-proxy/* {
+			reverse_proxy image_proxy_service:8080
+		}
+		handle_path /agent-harness/* {
+			reverse_proxy agent_harness_service:8080
+		}
+		# Served by the agent harness under their own prefix (no strip).
+		@agent_routes path /preview /preview/* /scheduled-action /scheduled-action/* /cognition /cognition/* /mcp /mcp/*
+		handle @agent_routes {
+			reverse_proxy agent_harness_service:8080
+		}
+
+		# --- Workers and Bun services ----------------------------------------
+		@websocket path /websocket /websocket/*
+		handle @websocket {
+			uri strip_prefix /websocket
+			reverse_proxy websocket_service:6969
+		}
+		@sync path /sync /sync/*
+		handle @sync {
+			uri strip_prefix /sync
+			# The worker only upgrades sockets from origins on its own list;
+			# the browser-facing origin check happens here, on one origin.
+			reverse_proxy sync_service:8787 {
+				header_up Origin http://localhost:3000
+			}
+		}
+		handle_path /lexical/* {
+			reverse_proxy lexical_service:8096
+		}
+		handle_path /ai-editing/* {
+			reverse_proxy ai_editing_worker:8933
+		}
+		# Telemetry proxy: not deployed. Accept and drop.
+		handle /i/* {
+			respond 204
+		}
+
+		# --- Object storage (Floci) ------------------------------------------
+		# Browsers fetch presigned and document URLs here. Only object reads
+		# and presigned object writes in known buckets pass; bucket, listing,
+		# ACL and every other API stays inside the network.
+		handle /local-storage/* {
+			route {
+				@storage_api expression `{query}.matches("(?i)(^|&)(action|acl|policy|notification|cors|uploads|tagging|versions|versioning|lifecycle|website|replication|encryption|object-lock|location|logging|delete|retention|legal-hold|restore|select|torrent|attributes)(=|&|$)")`
+				respond @storage_api 403
+				@storage_unsigned_put {
+					method PUT
+					not query X-Amz-Signature=*
+				}
+				respond @storage_unsigned_put 403
+				@storage_object {
+					path_regexp ^/local-storage/(macro-email-attachments|doc-storage|docx-upload|static-file-storage|bulk-upload-staging|macro-call-recording-local|agent-session-changes|github-pull-request-patches)/.+
+					method GET HEAD PUT
+				}
+				handle @storage_object {
+					uri strip_prefix /local-storage
+					# Presigned URLs are signed for the in-network endpoint.
+					reverse_proxy localstack:4566 {
+						header_up Host localstack:4566
+					}
+				}
+				respond 403
+			}
+		}
+		handle /local-storage {
+			respond 403
+		}
+
+		# --- Static files: the CDN in front of the static file service -------
+		# Mirrors infra/local/nginx/static-file-cdn.conf, except the service's
+		# /internal API is not reachable from outside.
+		handle_path /static-file/* {
+			route {
+				@static_api path /api/*
+				reverse_proxy @static_api static_file_service:8080
+				@static_internal path /internal/*
+				respond @static_internal 404
+				@static_read method GET HEAD
+				handle @static_read {
+					route {
+						@static_file path /file/*
+						header @static_file {
+							Cross-Origin-Resource-Policy cross-origin
+							Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; img-src data:;"
+						}
+						rewrite * /static-file-storage{uri}
+						reverse_proxy localstack:4566 {
+							header_up Host localstack:4566
+						}
+					}
+				}
+				respond 405
+			}
+		}
+
+		# --- The app bundle --------------------------------------------------
+		# Built with base /app; unknown paths fall back to index.html.
+		redir / "/app/?{query}" 302
+		redir /app /app/ 308
+		handle_path /app/* {
+			root * /srv/frontend
+			try_files {path} /index.html
+			file_server
+		}
+
+		respond 404
+	}
+
+	handle_errors 502 503 504 {
+		header Content-Type application/json
+		respond `{"error":"service unavailable or feature disabled"}` 503
+	}
+}
