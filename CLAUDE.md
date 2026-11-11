@@ -29,6 +29,7 @@ patterns in older code.
 | `infra/` | Deployment definitions and local infrastructure. |
 | `agent-teammates/` | Agents that work in Macro as their own users: the `muppet` library and a `starter-agent` template. Outside the root workspace and its checks. |
 | `packages/muppet/`, `packages/starter-agent/` | The hosted agent teammate runtime, in the root workspace: the muppet library and the template each agent's repository starts from (`docs/design/agent-teammates.md`). |
+| `selfhost/` | Self-host deployment: the root `docker-compose.yml` stack's images, gateway, and [operator guide](selfhost/README.md). |
 | `tooling/` | Development tools, scripts, and imported `just` recipes. |
 | `docs/` | Development guides, architecture, designs, runbooks, and the browser agent guide; see [the index](docs/README.md). |
 
