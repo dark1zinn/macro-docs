@@ -43,6 +43,8 @@ pub mod resources;
 pub mod sandbox_image;
 pub mod sdk_webhook;
 pub mod seed_env;
+#[cfg(feature = "selfhost")]
+pub mod selfhost;
 pub mod snapshot;
 pub mod stack;
 pub mod stage;

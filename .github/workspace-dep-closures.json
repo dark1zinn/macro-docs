@@ -16082,6 +16082,7 @@
     ],
     "xtask_local": [
       "crates/macro_aws_config",
+      "crates/macro_db_migrator",
       "crates/macro_env",
       "crates/macro_env_var",
       "crates/macro_event_topics",

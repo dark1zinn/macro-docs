@@ -81,7 +81,7 @@ pub fn provision(_instance: &Instance) -> Result<()> {
 }
 
 #[cfg(feature = "local-stack")]
-async fn provision_async(brokers: &str) -> Result<()> {
+pub(super) async fn provision_async(brokers: &str) -> Result<()> {
     let admin: AdminClient<DefaultClientContext> = ClientConfig::new()
         .set("bootstrap.servers", brokers)
         .create()

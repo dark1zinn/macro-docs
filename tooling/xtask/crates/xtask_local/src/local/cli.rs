@@ -60,6 +60,9 @@ enum Cmd {
     /// wipes; prefer `run-local`, which runs without a terminal too.
     #[command(subcommand)]
     Stack(StackCmd),
+    /// In-container bootstrap of the self-host compose stack (`selfhost/`).
+    #[cfg(feature = "selfhost")]
+    SelfhostInit(super::selfhost::Args),
 }
 
 #[derive(Subcommand)]
@@ -316,6 +319,8 @@ fn run(cli: Cli) -> Result<()> {
             StackCmd::Status(a) => super::stack::status(&a),
             StackCmd::Down(a) => super::stack::down(&a),
         },
+        #[cfg(feature = "selfhost")]
+        Cmd::SelfhostInit(args) => super::selfhost::run(args),
     }
 }
 
