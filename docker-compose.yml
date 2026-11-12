@@ -631,17 +631,21 @@ services:
       backend: { aliases: [search-processing-service] }
 
   # ==========================================================================
-  # Profile `ai`: agents, chat and AI editing
+  # The agent harness is core: besides agents and chat it serves onboarding
+  # (`/cognition/onboarding`), which every new account has to complete. AI
+  # requests fail until model keys are set.
   # ==========================================================================
   agent_harness_service:
     <<: *rust
-    profiles: [ai]
     restart: on-failure
     command: ["/app/out/agent_harness_service"]
     networks:
       edge: { aliases: [agent-harness-service] }
       backend: { aliases: [agent-harness-service] }
 
+  # ==========================================================================
+  # Profile `ai`: AI document editing
+  # ==========================================================================
   ai_editing_worker:
     profiles: [ai]
     image: ${MACRO_IMAGE_PREFIX:-ghcr.io/dark1zinn/macro-selfhost}-ai-editing:${MACRO_VERSION:-main}
