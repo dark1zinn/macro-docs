@@ -26,6 +26,8 @@
 **/target
 **/dist
 **/build
+# Source modules named `build` (crates/ai_engine/src/build/) are code.
+!**/src/**/build
 **/.wrangler
 **/test-results
 **/playwright-report
