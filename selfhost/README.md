@@ -33,6 +33,23 @@ The first start takes a few minutes while FusionAuth initializes and the
 database migrates. `docker compose ps` shows `bootstrap` and `init` as
 exited (0) when provisioning is done.
 
+### The first account is the administrator
+
+The stack runs in self-host mode (`MACRO_SELF_HOSTED=true`, and a web app
+built with `VITE_SELF_HOSTED=true`):
+
+- **The first account to sign up becomes the root administrator.** On an
+  existing install with no administrator, the oldest account is promoted at
+  the next start.
+- **Signups are invite-only after that.** A new account is accepted when its
+  email is on the allowed list or has a pending team invite. The
+  administrator changes this, allows emails, promotes other administrators
+  and disables accounts under **Settings → Admin**.
+- **Every account has every feature.** There are no plans, trials, billing
+  or usage limits, and onboarding can be skipped at any step.
+- **No product analytics.** The web app loads no analytics or ad scripts,
+  and the services send nothing to PostHog or Meta.
+
 ### HTTPS is required
 
 Session cookies are `Secure`, so browsers only keep them over HTTPS, or on
@@ -64,6 +81,7 @@ Enable profiles with `COMPOSE_PROFILES` in `.env`, comma-separated, or with
 |`slack`|Slack import worker||
 |`https`|Automatic TLS on 80/443|`MACRO_DOMAIN`; don't use it under Coolify|
 |`mailcatcher`|Mailpit: keeps every outgoing mail in a local inbox at `http://127.0.0.1:8025` instead of delivering it|`SMTP_RELAY_HOST=mailpit`, `SMTP_RELAY_PORT=1025`, `SMTP_RELAY_TLS_LEVEL=may`. For trying the stack only; the relay still refuses recipients whose domain has no mail server|
+|`observability`|Grafana with Tempo, Loki and Prometheus (`grafana/otel-lgtm`) at `http://127.0.0.1:3001`, no login|`MACRO_OTEL_GRPC_ENDPOINT=http://otel-lgtm:4317`, `MACRO_OTEL_HTTP_ENDPOINT=http://otel-lgtm:4318`. Without them nothing is exported|
 
 When a feature is off, its API routes answer `503`.
 
