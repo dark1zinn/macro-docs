@@ -39,6 +39,7 @@ import {
   enableCalendarScheduling,
   enableChatV3Agents,
   enableCrm,
+  SELF_HOSTED,
 } from './featureFlags';
 import { PERMISSION_IDS } from './permissions';
 import type { SettingsTab } from './SettingsState';
@@ -286,7 +287,14 @@ export const SETTINGS_TAB_GROUPS: SettingsTabGroup[] = [
     get label() {
       return t('settingsNav.groupAdmin');
     },
-    items: [tabItem('tabDebug', { tab: 'Admin', icon: BugIcon, keywords: [] })],
+    items: [
+      tabItem('tabDebug', { tab: 'Admin', icon: BugIcon, keywords: [] }),
+      tabItem('tabSelfHost', {
+        tab: 'Self-host',
+        icon: UserGearIcon,
+        keywords: ['signup', 'users', 'invite', 'self-host'],
+      }),
+    ],
   },
 ];
 
@@ -326,6 +334,7 @@ const SETTINGS_TAB_SLUGS: Record<SettingsTab, string> = {
   Email: 'email',
   GitHub: 'github',
   Admin: 'admin',
+  'Self-host': 'self-host',
 };
 
 const SETTINGS_SLUG_TO_TAB = new Map<string, SettingsTab>(
@@ -370,9 +379,11 @@ export const useSettingsTabAvailable = () => {
       case 'Appearance':
       case 'Account':
       case 'Notifications':
+        return true;
+      // A self-hosted install has no plans or billing.
       case 'Usage':
       case 'Billing':
-        return true;
+        return !SELF_HOSTED;
       case 'Email':
         return ENABLE_EMAIL;
       case 'Calendar':
@@ -422,6 +433,8 @@ export const useSettingsTabAvailable = () => {
         return isNativeMobilePlatform() && DEV_MODE_ENV;
       case 'Admin':
         return hasAdminPanel();
+      case 'Self-host':
+        return SELF_HOSTED && hasAdminPanel();
       default:
         return false;
     }
