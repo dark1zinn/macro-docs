@@ -138,9 +138,10 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d
 
 Only images of active profiles are built. Set `COMPOSE_PROFILES` before
 building `search` or `ai`. The Rust and web builds need about 16 GB of RAM
-and 40 GB of disk. To publish to your own registry, set `MACRO_IMAGE_PREFIX`
-and run `docker compose ... push`, or push a fork's `development` branch so
-the workflow publishes to its GHCR.
+and 40 GB of disk; they run at low CPU priority, and `CARGO_BUILD_JOBS=4`
+caps their parallelism on a host doing other work. To publish to your own
+registry, set `MACRO_IMAGE_PREFIX` and run `docker compose ... push`, or push
+a fork's `development` branch so the workflow publishes to its GHCR.
 
 ## Known limits
 
