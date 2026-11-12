@@ -55,8 +55,8 @@ Enable profiles with `COMPOSE_PROFILES` in `.env`, comma-separated, or with
 
 |Profile|Adds|Needs|
 |---|---|---|
-|*(core)*|Auth, documents, realtime sync, files, notifications, contacts, link previews|`MACRO_PUBLIC_URL`, mail settings|
-|`search`|Full-text search: OpenSearch plus the indexing service|~1 GB RAM; on the host, `sysctl vm.max_map_count=262144`|
+|*(core)*|Auth, documents, realtime sync, files, notifications, contacts, link previews, OpenSearch (document storage needs it; ~1 GB RAM, and on the host `sysctl vm.max_map_count=262144`)|`MACRO_PUBLIC_URL`, mail settings|
+|`search`|Full-text search: indexes content into OpenSearch||
 |`ai`|Agents, AI chat and document editing|Your model provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, ...). Managed coding sandboxes need `DAYTONA_API_KEY`; the host Docker socket is never mounted.|
 |`email`|Gmail inbox and Google Calendar|A Google OAuth client (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET_KEY`)|
 |`sso`|Google and GitHub sign-in|`MACRO_AUTH_DOMAIN` and `MACRO_AUTH_PUBLIC_URL`, plus the OAuth clients|
