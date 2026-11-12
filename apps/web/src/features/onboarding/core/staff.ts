@@ -1,3 +1,4 @@
+import { SELF_HOSTED } from '@core/constant/featureFlags';
 import { emailDomain } from './team';
 
 const MACRO_STAFF_DOMAIN = 'macro.com';
@@ -7,7 +8,7 @@ export function isMacroStaffEmail(address: string | undefined): boolean {
   return emailDomain(address) === MACRO_STAFF_DOMAIN;
 }
 
-/** Whether this account gets the staff Bypass button on the onboarding flow. */
+/** Whether this account gets the Bypass button on the onboarding flow: staff, or anyone on a self-hosted install. */
 export function canBypassOnboarding(address: string | undefined): boolean {
-  return isMacroStaffEmail(address?.trim());
+  return SELF_HOSTED || isMacroStaffEmail(address?.trim());
 }
