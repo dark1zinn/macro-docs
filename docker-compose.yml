@@ -201,8 +201,8 @@ x-macro-env: &macro-env
   EMAIL_SERVICE_CLOUDFRONT_SIGNER_PUBLIC_KEY_ID: local-cloudfront-signer
 
 x-images:
-  services: &services-image ${MACRO_IMAGE_PREFIX:-ghcr.io/dark1zinn/macro-selfhost}-services:${MACRO_VERSION:-development}
-  init: &init-image ${MACRO_IMAGE_PREFIX:-ghcr.io/dark1zinn/macro-selfhost}-init:${MACRO_VERSION:-development}
+  services: &services-image ${MACRO_IMAGE_PREFIX:-ghcr.io/dark1zinn/macro-selfhost}-services:${MACRO_VERSION:-main}
+  init: &init-image ${MACRO_IMAGE_PREFIX:-ghcr.io/dark1zinn/macro-selfhost}-init:${MACRO_VERSION:-main}
 
 # A container that loads the `app` secrets and starts once provisioning ran.
 x-app: &app
@@ -501,7 +501,7 @@ services:
       backend: { aliases: [image-proxy-service] }
 
   websocket_service:
-    image: ${MACRO_IMAGE_PREFIX:-ghcr.io/dark1zinn/macro-selfhost}-websocket:${MACRO_VERSION:-development}
+    image: ${MACRO_IMAGE_PREFIX:-ghcr.io/dark1zinn/macro-selfhost}-websocket:${MACRO_VERSION:-main}
     restart: unless-stopped
     logging: *logging
     networks:
@@ -510,7 +510,7 @@ services:
   # Realtime document sync: the Cloudflare worker under `wrangler dev`.
   sync_service:
     <<: *app
-    image: ${MACRO_IMAGE_PREFIX:-ghcr.io/dark1zinn/macro-selfhost}-sync:${MACRO_VERSION:-development}
+    image: ${MACRO_IMAGE_PREFIX:-ghcr.io/dark1zinn/macro-selfhost}-sync:${MACRO_VERSION:-main}
     # The image's own CMD (docker/sync-service.Dockerfile), restated because
     # the secrets entrypoint replaces it.
     command: ["sh", "-c", "printf \"LOCAL_API_KEY=%s\\nDOCUMENT_PERMISSIONS_SECRET=%s\\nSPS_API_SECRET_KEY=%s\\nDSS_INTERNAL_AUTH_KEY=%s\\nLEXICAL_SERVICE_AUTH_KEY=%s\\n\" \"$$INTERNAL_API_SECRET_KEY\" \"$$DOCUMENT_PERMISSIONS_SECRET\" \"$$INTERNAL_API_SECRET_KEY\" \"$$DSS_INTERNAL_AUTH_KEY\" \"$$INTERNAL_API_SECRET_KEY\" > .dev.vars && CI=true npx wrangler d1 migrations apply USER_PEER_MAPPING --local --config wrangler.docker.toml && exec npx wrangler dev --local --ip 0.0.0.0 --port 8787 --config wrangler.docker.toml"]
@@ -530,7 +530,7 @@ services:
 
   lexical_service:
     <<: *app
-    image: ${MACRO_IMAGE_PREFIX:-ghcr.io/dark1zinn/macro-selfhost}-lexical:${MACRO_VERSION:-development}
+    image: ${MACRO_IMAGE_PREFIX:-ghcr.io/dark1zinn/macro-selfhost}-lexical:${MACRO_VERSION:-main}
     command: ["bun", "/app/server.bundle.js"]
     environment:
       <<: *macro-env
@@ -548,7 +548,7 @@ services:
 
   # The public entrypoint: the app bundle plus every API on one origin.
   gateway:
-    image: ${MACRO_IMAGE_PREFIX:-ghcr.io/dark1zinn/macro-selfhost}-gateway:${MACRO_VERSION:-development}
+    image: ${MACRO_IMAGE_PREFIX:-ghcr.io/dark1zinn/macro-selfhost}-gateway:${MACRO_VERSION:-main}
     restart: unless-stopped
     logging: *logging
     environment:
@@ -571,7 +571,7 @@ services:
   # start without them. Only the indexing service is the `search` profile.
   # ==========================================================================
   search:
-    image: ${MACRO_IMAGE_PREFIX:-ghcr.io/dark1zinn/macro-selfhost}-opensearch:${MACRO_VERSION:-development}
+    image: ${MACRO_IMAGE_PREFIX:-ghcr.io/dark1zinn/macro-selfhost}-opensearch:${MACRO_VERSION:-main}
     restart: unless-stopped
     logging: *logging
     environment:
@@ -630,7 +630,7 @@ services:
 
   ai_editing_worker:
     profiles: [ai]
-    image: ${MACRO_IMAGE_PREFIX:-ghcr.io/dark1zinn/macro-selfhost}-ai-editing:${MACRO_VERSION:-development}
+    image: ${MACRO_IMAGE_PREFIX:-ghcr.io/dark1zinn/macro-selfhost}-ai-editing:${MACRO_VERSION:-main}
     restart: unless-stopped
     logging: *logging
     environment:
@@ -723,7 +723,7 @@ services:
   # ==========================================================================
   tls-proxy:
     profiles: [https]
-    image: ${MACRO_IMAGE_PREFIX:-ghcr.io/dark1zinn/macro-selfhost}-gateway:${MACRO_VERSION:-development}
+    image: ${MACRO_IMAGE_PREFIX:-ghcr.io/dark1zinn/macro-selfhost}-gateway:${MACRO_VERSION:-main}
     restart: unless-stopped
     logging: *logging
     command: ["caddy", "run", "--config", "/etc/caddy/tls.Caddyfile", "--adapter", "caddyfile"]
