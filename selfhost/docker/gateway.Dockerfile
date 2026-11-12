@@ -35,6 +35,7 @@ RUN MODE=development NODE_ENV=production NODE_OPTIONS=--max-old-space-size=8192 
     VITE_LOCAL_SERVERS=ALL \
     VITE_LOCAL_BACKEND_ORIGIN=same-origin \
     VITE_AI_EDITING_WORKER_URL=/ai-editing \
+    VITE_SELF_HOSTED=true \
     nice -n 10 bun run --bun build \
     && bun scripts/cache-wasm/cli.ts package-dist --dist dist
 
