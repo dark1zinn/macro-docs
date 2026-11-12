@@ -262,6 +262,8 @@ services:
         condition: service_healthy
       floci:
         condition: service_started
+      search:
+        condition: service_healthy
 
   # ==========================================================================
   # Data stores (backend network only)
@@ -550,7 +552,8 @@ services:
     restart: unless-stopped
     logging: *logging
     environment:
-      MACRO_AUTH_DOMAIN: ${MACRO_AUTH_DOMAIN:-}
+      # A host nothing resolves when SSO is off: Caddy rejects an empty matcher.
+      MACRO_AUTH_DOMAIN: ${MACRO_AUTH_DOMAIN:-auth.invalid}
     ports:
       - "${MACRO_HTTP_BIND:-0.0.0.0}:${MACRO_HTTP_PORT:-8080}:80"
     healthcheck:
@@ -564,10 +567,10 @@ services:
     networks: [edge]
 
   # ==========================================================================
-  # Profile `search`: full-text search
+  # Search. OpenSearch and its indices are core: document storage refuses to
+  # start without them. Only the indexing service is the `search` profile.
   # ==========================================================================
   search:
-    profiles: [search]
     image: ${MACRO_IMAGE_PREFIX:-ghcr.io/dark1zinn/macro-selfhost}-opensearch:${MACRO_VERSION:-development}
     restart: unless-stopped
     logging: *logging
@@ -592,7 +595,6 @@ services:
 
   init-search:
     <<: [*one-shot, *app]
-    profiles: [search]
     image: *init-image
     restart: "no"
     command: ["xtask_local", "selfhost-init", "search"]
