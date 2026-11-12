@@ -171,6 +171,9 @@ x-macro-env: &macro-env
   GOOGLE_GENERATIVE_AI_API_KEY: ${GOOGLE_GENERATIVE_AI_API_KEY:-local-google-generative-ai-key}
   FIREWORK_API_KEY: ${FIREWORK_API_KEY:-local-firework-key}
   COHERE_API_KEY: ${COHERE_API_KEY:-local-cohere-key}
+  # The model router refuses to start without all five provider keys; the
+  # local stack gets this one from Doppler.
+  CEREBRAS_API_KEY: ${CEREBRAS_API_KEY:-local-cerebras-key}
   GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-local-google-client}
   GOOGLE_CLIENT_SECRET_KEY: ${GOOGLE_CLIENT_SECRET_KEY:-local-google-client-secret}
   GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-local-github-client}
@@ -568,6 +571,9 @@ services:
     environment:
       # A host nothing resolves when SSO is off: Caddy rejects an empty matcher.
       MACRO_AUTH_DOMAIN: ${MACRO_AUTH_DOMAIN:-auth.invalid}
+      # The providers whose key is set in .env (the services' stub defaults
+      # don't count), served to the web app at /selfhost/config.json.
+      MACRO_AI_PROVIDERS: "${ANTHROPIC_API_KEY:+anthropic,}${OPENAI_API_KEY:+openai,}${GOOGLE_GENERATIVE_AI_API_KEY:+google,}${FIREWORK_API_KEY:+fireworks,}${CEREBRAS_API_KEY:+cerebras,}"
     ports:
       - "${MACRO_HTTP_BIND:-0.0.0.0}:${MACRO_HTTP_PORT:-8080}:80"
     healthcheck:
