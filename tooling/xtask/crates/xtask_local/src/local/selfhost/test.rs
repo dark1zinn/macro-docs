@@ -217,6 +217,33 @@ fn sso_requests_exist_only_for_configured_providers() {
     );
 }
 
+/// The agent harness resolves `google_gmail` by name at startup, so it must
+/// exist even without Google; it stays disabled until `sso` configures it.
+#[test]
+fn placeholder_google_providers_exist_and_are_disabled() {
+    let requests = placeholder_google_requests();
+    let gmail = requests
+        .iter()
+        .find(|request| request.body["identityProvider"]["name"] == "google_gmail")
+        .expect("a google_gmail provider");
+    assert_eq!(
+        gmail.url,
+        format!("/api/identity-provider/{}", identity::GOOGLE_GMAIL_IDP_ID)
+    );
+    let reconcile = format!("/api/lambda/{}", identity::RECONCILE_LAMBDA_ID);
+    assert!(requests.iter().any(|request| request.url == reconcile));
+    for request in requests
+        .iter()
+        .filter(|r| r.url.starts_with("/api/identity-provider/"))
+    {
+        assert_eq!(
+            request.body["identityProvider"]["enabled"], false,
+            "{}",
+            request.url
+        );
+    }
+}
+
 /// Init can complete every kickstart request it repeats, from env it has.
 #[test]
 fn every_kickstart_request_can_be_completed_by_init() {

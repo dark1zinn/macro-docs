@@ -97,6 +97,8 @@ pub(super) enum SecretKind {
     Base64Key32,
     /// A 2048-bit RSA key pair in PEM (PKCS#8 private, SPKI public).
     RsaKeyPair,
+    /// An ed25519 private key in OpenSSH format (`ssh-keygen`).
+    SshEd25519,
 }
 
 /// A generated secret value.
@@ -288,6 +290,13 @@ pub(super) const SECRETS: &[Secret] = &[
         files: &[raw(APP, "CAL_WEBHOOK_SECRET_KEY")],
     },
     Secret {
+        // The agent harness's preview SSH server identity, as the local stack
+        // generates it (env_layer.rs); it refuses to start without one.
+        canonical: "PREVIEW_SSH_HOST_KEY",
+        kind: SecretKind::SshEd25519,
+        files: &[raw(APP, "PREVIEW_SSH_HOST_KEY")],
+    },
+    Secret {
         canonical: "MACRO_API_TOKEN",
         kind: SecretKind::RsaKeyPair,
         files: &[
@@ -431,7 +440,7 @@ fn write_file(path: &Path, contents: &str, mode: u32) -> Result<()> {
     std::fs::rename(&tmp, path).with_context(|| format!("replacing {}", path.display()))
 }
 
-/// The production generator: `openssl`, which the init image ships.
+/// The production generator: `openssl` and `ssh-keygen`, which the init image ships.
 fn openssl_secret(kind: SecretKind) -> Result<SecretValue> {
     let run = |args: &[&str], stdin: Option<&str>| -> Result<String> {
         let mut child = Command::new("openssl")
@@ -476,7 +485,36 @@ fn openssl_secret(kind: SecretKind) -> Result<SecretValue> {
             let public = run(&["pkey", "-pubout"], Some(&private))?;
             SecretValue::Pair { private, public }
         }
+        SecretKind::SshEd25519 => SecretValue::Single(ssh_ed25519_key()?),
     })
+}
+
+/// A fresh ed25519 private key in OpenSSH format. `ssh-keygen` only writes
+/// keys to files, so it goes through a private temporary directory.
+fn ssh_ed25519_key() -> Result<String> {
+    let dir = std::env::temp_dir().join(format!("macro-ssh-key-{}", std::process::id()));
+    create_private_dir(&dir)?;
+    let key_path = dir.join("key");
+    let result = (|| {
+        let status = Command::new("ssh-keygen")
+            .args([
+                "-q",
+                "-t",
+                "ed25519",
+                "-N",
+                "",
+                "-C",
+                "macro-selfhost-preview",
+                "-f",
+            ])
+            .arg(&key_path)
+            .status()
+            .context("running ssh-keygen")?;
+        anyhow::ensure!(status.success(), "ssh-keygen failed");
+        std::fs::read_to_string(&key_path).context("reading the generated SSH key")
+    })();
+    let _ = std::fs::remove_dir_all(&dir);
+    result
 }
 
 // ---------------------------------------------------------------------------
@@ -677,7 +715,29 @@ fn provision() -> Result<()> {
     fusionauth.complete_kickstart()?;
     fusionauth.apply_redirect_urls(&redirect_urls(&public_url))?;
     println!("FusionAuth redirect URLs point at {public_url}");
+    for request in placeholder_google_requests() {
+        if fusionauth.create_if_missing(&request.url, &request.body)? {
+            println!("created placeholder {}", request.url);
+        }
+    }
     Ok(())
+}
+
+/// The Google identity providers, disabled and without a real client.
+/// The agent harness looks up `google_gmail` by name at startup and refuses to
+/// start without it; the `sso` step replaces these when Google is configured.
+pub(super) fn placeholder_google_requests() -> Vec<Upsert> {
+    let placeholder = kickstart::GoogleIdp {
+        client_id: "selfhost-google-unconfigured".into(),
+        client_secret: "selfhost-google-unconfigured".into(),
+    };
+    let mut requests = sso_requests(Some(&placeholder), None);
+    for request in &mut requests {
+        if let Some(provider) = request.body.get_mut("identityProvider") {
+            provider["enabled"] = Value::Bool(false);
+        }
+    }
+    requests
 }
 
 /// What `complete_kickstart` does with one kickstart request.
@@ -964,6 +1024,18 @@ impl FusionAuth {
             .flatten()
             .filter_map(|webhook| webhook["url"].as_str().map(str::to_owned))
             .collect())
+    }
+
+    /// Create the entity at `path` unless it exists. Returns whether it was created.
+    fn create_if_missing(&self, path: &str, body: &Value) -> Result<bool> {
+        match self.call("GET", path, None)?.0 {
+            200 => Ok(false),
+            404 => {
+                self.call_ok("POST", path, Some(body))?;
+                Ok(true)
+            }
+            status => bail!("FusionAuth GET {path} returned {status}"),
+        }
     }
 
     /// Create the entity at `path`, or replace it when it already exists.
