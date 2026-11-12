@@ -31,6 +31,7 @@ export default {
   tabAccountManagers: 'Account Managers',
   tabBots: 'Bots',
   tabDebug: 'Debug',
+  tabSelfHost: 'Self-host',
 
   // Sidebar and sheet chrome
   settings: 'Settings',

@@ -1,7 +1,11 @@
+import { SELF_HOSTED } from '@core/constant/featureFlags';
 import { SERVER_HOSTS } from '@core/constant/servers';
 import { platformFetch } from '@core/util/platformFetch';
 import { authServiceClient } from '@service-auth/client';
 import type { SendCodeResult, VerifyCodeResult } from '../context/auth-context';
+
+/** Backend denial text from `signup_forbidden_response`, self-host only. */
+const SIGNUP_DENIED = 'signup is not allowed';
 
 /** Where the passwordless magic link returns. */
 const REDIRECT_URI = `${window.location.origin}/app`;
@@ -58,7 +62,19 @@ export async function sendEmailCode(input: {
     }
   ).catch(() => undefined);
   if (!response) return { t: 'failed', message: 'Unable to reach Macro.' };
-  if (!response.ok) return { t: 'failed', message: await response.text() };
+  if (!response.ok) {
+    const body = await response.text();
+    const signupDenied =
+      SELF_HOSTED && response.status === 403 && body.includes(SIGNUP_DENIED);
+    if (signupDenied) {
+      return {
+        t: 'failed',
+        message:
+          'Sign-up is closed on this server. Ask the administrator to add your email.',
+      };
+    }
+    return { t: 'failed', message: body };
+  }
 
   // 202: the address must sign in through its organization's identity provider.
   if (response.status === 202) {

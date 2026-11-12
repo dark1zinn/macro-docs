@@ -339,6 +339,11 @@ export const ENABLE_EMAIL = defineFlag({
   default: true,
 }).enabled;
 
+export const SELF_HOSTED = defineFlag({
+  env: 'SELF_HOSTED',
+  default: false,
+}).enabled;
+
 export const ENABLE_BLOCK_IN_BLOCK = defineFlag({
   env: 'ENABLE_BLOCK_IN_BLOCK',
   default: true,
