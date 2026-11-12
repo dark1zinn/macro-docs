@@ -121,6 +121,11 @@ pub async fn handler(
                             tracing::warn!(error=?denial, "signup policy denied passwordless user creation");
                             signup_forbidden_response()
                         })?;
+                    if let Some(denied) =
+                        crate::api::selfhost_admin::signup_denied(&ctx, &lowercase_email).await
+                    {
+                        return Err(denied);
+                    }
 
                     let fusionauth_user_id = ctx
                         .auth_client

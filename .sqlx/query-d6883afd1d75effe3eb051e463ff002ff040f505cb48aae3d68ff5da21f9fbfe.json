@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT 1 AS \"locked!\" FROM (SELECT pg_advisory_xact_lock(hashtext('selfhost_root_claim'))) AS root_claim_lock",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "locked!",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d6883afd1d75effe3eb051e463ff002ff040f505cb48aae3d68ff5da21f9fbfe"
+}

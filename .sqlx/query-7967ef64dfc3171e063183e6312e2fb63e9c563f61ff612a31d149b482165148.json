@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO selfhost_signup_allowlist (email, added_by) VALUES ($1, $2) ON CONFLICT (email) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7967ef64dfc3171e063183e6312e2fb63e9c563f61ff612a31d149b482165148"
+}

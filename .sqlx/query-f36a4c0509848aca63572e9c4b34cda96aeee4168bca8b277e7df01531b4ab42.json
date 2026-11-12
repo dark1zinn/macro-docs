@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT email AS \"email!\", created_at AS \"created_at!\"\n               FROM selfhost_signup_allowlist\n               ORDER BY created_at ASC, email ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "email!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "f36a4c0509848aca63572e9c4b34cda96aeee4168bca8b277e7df01531b4ab42"
+}
