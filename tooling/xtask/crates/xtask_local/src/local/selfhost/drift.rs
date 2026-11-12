@@ -41,12 +41,15 @@ fn secret_names(group: &str) -> Vec<&'static str> {
 }
 
 /// Keys of the local env the self-host stack deliberately does not set: the
-/// local orchestrator's own bookkeeping and the host-Docker sandbox provider.
+/// local orchestrator's own bookkeeping, the host-Docker sandbox provider, and
+/// product analytics (only document_storage_service needs a PostHog key, set
+/// on that service alone).
 const EXCLUDED: &[&str] = &[
     "COMPOSE_PROJECT_NAME",
     "FRONTEND_PORT",
     "LOCAL_CONTAINER_IMAGE",
     "LOCAL_CONTAINER_NETWORK",
+    "POSTHOG_API_KEY",
 ];
 
 /// A key the local stack starts to need must reach the self-host services too.
@@ -141,8 +144,11 @@ fn gateway_storage_allowlist_matches_buckets() {
     assert_eq!(allowed, buckets);
 }
 
+/// Compose restates the image's CMD (the secrets entrypoint replaces it),
+/// adding only the trace-export override.
 #[test]
 fn sync_command_matches_its_dockerfile() {
+    const OTEL_OVERRIDE: &str = " --var OTEL_EXPORTER_OTLP_ENDPOINT:${MACRO_OTEL_HTTP_ENDPOINT:-}";
     let dockerfile = repo_file("docker/sync-service.Dockerfile");
     let cmd = dockerfile
         .lines()
@@ -155,7 +161,11 @@ fn sync_command_matches_its_dockerfile() {
         .as_sequence()
         .unwrap()
         .iter()
-        .map(|part| part.as_str().unwrap().replace("$$", "$"))
+        .map(|part| {
+            let part = part.as_str().unwrap().replace("$$", "$");
+            part.strip_suffix(OTEL_OVERRIDE)
+                .map_or(part.clone(), str::to_owned)
+        })
         .collect();
     assert_eq!(restated, image);
 }

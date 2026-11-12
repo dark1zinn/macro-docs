@@ -6,7 +6,7 @@
 # Only `gateway` publishes a port (plus 80/443 for the opt-in `https`
 # profile). Every other container is reachable only on the compose networks.
 # Optional features are compose profiles; set COMPOSE_PROFILES in .env:
-#   search, ai, email, sso, whatsapp, slack, https
+#   search, ai, email, sso, whatsapp, slack, https, mailcatcher, observability
 #
 # Secrets are generated on first start by `bootstrap` into the `secrets`
 # volume and loaded by each container's entrypoint (selfhost-init in
@@ -26,6 +26,12 @@ x-logging: &logging
 # step with it.
 x-macro-env: &macro-env
   ENVIRONMENT: local
+  # Self-host mode: every account fully entitled (no plans or billing), the
+  # first account is the root administrator, signups are admin-controlled.
+  MACRO_SELF_HOSTED: "true"
+  # Observability is off unless an OTLP/gRPC endpoint is set (the
+  # `observability` profile's is http://otel-lgtm:4317).
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${MACRO_OTEL_GRPC_ENDPOINT:-}
   PORT: "8080"
   MACRO_PUBLIC_URL: ${MACRO_PUBLIC_URL:?set MACRO_PUBLIC_URL in .env}
   FRONTEND_ORIGIN: ${MACRO_PUBLIC_URL}
@@ -170,7 +176,8 @@ x-macro-env: &macro-env
   GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-local-github-client}
   GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-local-github-client-secret}
   GITHUB_IDP_ID: 99999999-9999-4999-8999-999999999999
-  POSTHOG_API_KEY: ${POSTHOG_API_KEY:-local-posthog-project-key}
+  # PostHog stays unset: the backends that read it optionally then send
+  # nothing. document_storage_service requires one; see that service.
   PIPEDREAM_CLIENT_ID: ${PIPEDREAM_CLIENT_ID:-local-pipedream-client}
   PIPEDREAM_CLIENT_SECRET: ${PIPEDREAM_CLIENT_SECRET:-local-pipedream-secret}
   PIPEDREAM_PROJECT_ID: ${PIPEDREAM_PROJECT_ID:-proj_local}
@@ -456,6 +463,12 @@ services:
   document_storage_service:
     <<: *rust
     command: ["/app/out/document_storage_service"]
+    environment:
+      <<: *macro-env
+      # Required by its config; pointed at a closed local port so feature
+      # flag lookups fail fast to their defaults and nothing leaves the host.
+      POSTHOG_API_KEY: selfhost-posthog-disabled
+      POSTHOG_HOST: http://127.0.0.1:9
     networks:
       edge: { aliases: [document-storage-service] }
       backend: { aliases: [document-storage-service] }
@@ -512,8 +525,9 @@ services:
     <<: *app
     image: ${MACRO_IMAGE_PREFIX:-ghcr.io/dark1zinn/macro-selfhost}-sync:${MACRO_VERSION:-main}
     # The image's own CMD (docker/sync-service.Dockerfile), restated because
-    # the secrets entrypoint replaces it.
-    command: ["sh", "-c", "printf \"LOCAL_API_KEY=%s\\nDOCUMENT_PERMISSIONS_SECRET=%s\\nSPS_API_SECRET_KEY=%s\\nDSS_INTERNAL_AUTH_KEY=%s\\nLEXICAL_SERVICE_AUTH_KEY=%s\\n\" \"$$INTERNAL_API_SECRET_KEY\" \"$$DOCUMENT_PERMISSIONS_SECRET\" \"$$INTERNAL_API_SECRET_KEY\" \"$$DSS_INTERNAL_AUTH_KEY\" \"$$INTERNAL_API_SECRET_KEY\" > .dev.vars && CI=true npx wrangler d1 migrations apply USER_PEER_MAPPING --local --config wrangler.docker.toml && exec npx wrangler dev --local --ip 0.0.0.0 --port 8787 --config wrangler.docker.toml"]
+    # the secrets entrypoint replaces it. Trace export is replaced too: the
+    # config's otel-collector does not exist here, and empty turns it off.
+    command: ["sh", "-c", "printf \"LOCAL_API_KEY=%s\\nDOCUMENT_PERMISSIONS_SECRET=%s\\nSPS_API_SECRET_KEY=%s\\nDSS_INTERNAL_AUTH_KEY=%s\\nLEXICAL_SERVICE_AUTH_KEY=%s\\n\" \"$$INTERNAL_API_SECRET_KEY\" \"$$DOCUMENT_PERMISSIONS_SECRET\" \"$$INTERNAL_API_SECRET_KEY\" \"$$DSS_INTERNAL_AUTH_KEY\" \"$$INTERNAL_API_SECRET_KEY\" > .dev.vars && CI=true npx wrangler d1 migrations apply USER_PEER_MAPPING --local --config wrangler.docker.toml && exec npx wrangler dev --local --ip 0.0.0.0 --port 8787 --config wrangler.docker.toml --var OTEL_EXPORTER_OTLP_ENDPOINT:${MACRO_OTEL_HTTP_ENDPOINT:-}"]
     volumes:
       - secrets:/run/macro-secrets:ro
       # Durable Object, KV, R2 and D1 state.
@@ -638,6 +652,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       CEREBRAS_API_KEY: ${CEREBRAS_API_KEY:-}
+      MACRO_OTEL_HTTP_ENDPOINT: ${MACRO_OTEL_HTTP_ENDPOINT:-}
     volumes:
       - ai_editing_state:/app/services/ai-editing-worker/.wrangler
     networks:
@@ -703,6 +718,30 @@ services:
       disable: true
 
   # ==========================================================================
+  # Profile `observability`: traces, logs and metrics from every service in
+  # Grafana's all-in-one LGTM image. Export stays off until it is pointed
+  # here: MACRO_OTEL_GRPC_ENDPOINT=http://otel-lgtm:4317 (Rust services) and
+  # MACRO_OTEL_HTTP_ENDPOINT=http://otel-lgtm:4318 (workers). Grafana is
+  # published on loopback only and opens without a login.
+  # ==========================================================================
+  otel-lgtm:
+    profiles: [observability]
+    # The version the repository's own local stack runs (docker/docker-compose.yml).
+    image: grafana/otel-lgtm:0.32.0
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "${GRAFANA_BIND:-127.0.0.1}:${GRAFANA_PORT:-3001}:3000"
+    volumes:
+      - lgtm_data:/data
+    networks: [edge, backend]
+
+  # ==========================================================================
   # Profile `mailcatcher`: keep every outgoing mail (login codes included) in
   # a local inbox instead of delivering it. For trying the stack without an
   # SMTP provider: set SMTP_RELAY_HOST=mailpit, SMTP_RELAY_PORT=1025 and
@@ -765,3 +804,4 @@ volumes:
   ai_editing_state:
   caddy_data:
   caddy_config:
+  lgtm_data:
