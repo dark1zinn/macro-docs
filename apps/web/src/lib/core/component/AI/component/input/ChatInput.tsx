@@ -25,6 +25,7 @@ import { createComposerLayout } from '@core/component/LexicalMarkdown/utils/crea
 import { toast } from '@core/component/Toast/Toast';
 import { fileTypeToBlockName } from '@core/constant/allBlocks';
 import { PaywallKey, usePaywallState } from '@core/constant/PaywallState';
+import { isModelAvailable } from '@core/constant/selfHostedAiProviders';
 import { TOKENS } from '@core/hotkey/tokens';
 import { hapticImpact } from '@core/mobile/haptics';
 import { isMobile } from '@core/mobile/isMobile';
@@ -89,7 +90,7 @@ export function ChatInput(props: ChatInputComponentProps) {
   // upsell at all.
   const modelOptions = createMemo(() => {
     const allowed = modelsForPlan(hasPaidAccess());
-    return PAID_MODELS.map((id) => ({
+    return PAID_MODELS.filter(isModelAvailable).map((id) => ({
       id,
       available: allowed.includes(id),
     }));

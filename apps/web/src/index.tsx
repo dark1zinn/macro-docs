@@ -7,6 +7,7 @@ import '@fontsource-variable/playfair-display';
 // SolidDevtools retains disposed memos, causes memory leak
 // import 'solid-devtools';
 import { initializeLexical } from '@core/component/LexicalMarkdown/init';
+import { loadSelfHostedAiProviders } from '@core/constant/selfHostedAiProviders';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import { getPlatform } from '@core/util/platform';
 import { installPlatformFetch } from '@core/util/platformFetch';
@@ -26,6 +27,7 @@ installPlatformFetch();
 
 initializeLexical();
 initMonochromeIcons();
+void loadSelfHostedAiProviders();
 
 const renderApp = () => {
   const root = document.getElementById('root');

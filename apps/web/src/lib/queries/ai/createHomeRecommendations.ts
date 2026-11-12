@@ -1,4 +1,4 @@
-import { FREE_DEFAULT_MODEL } from '@core/component/AI/constant';
+import { defaultModelForPlan } from '@core/component/AI/constant';
 import { PERMISSION_IDS } from '@core/constant/permissions';
 import { useHasPermission } from '@core/context/user';
 import {
@@ -42,7 +42,7 @@ export function createHomeRecommendations(
     id: 'home/recommended-fast',
     prompt: buildRecommendationPrompt(),
     schema: recommendationSchema,
-    model: FREE_DEFAULT_MODEL,
+    model: defaultModelForPlan(false),
     awaitGeneration: true,
     refreshCadence: 'high',
     expiry: 'day',
