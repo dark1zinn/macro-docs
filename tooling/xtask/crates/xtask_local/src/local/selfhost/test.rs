@@ -244,6 +244,17 @@ fn placeholder_google_providers_exist_and_are_disabled() {
     }
 }
 
+/// A provider named like the placeholder but under another id (made by hand)
+/// must not fail provisioning; other validation errors still must.
+#[test]
+fn duplicate_name_errors_are_recognised() {
+    let duplicate = r#"{"fieldErrors":{"identityProvider.name":[{"code":"[duplicate]identityProvider.name","message":"An identity provider with name [google_gmail] already exists."}]},"generalErrors":[]}"#;
+    assert!(is_duplicate_name(duplicate));
+    let other = r#"{"fieldErrors":{"identityProvider.oauth2.client_id":[{"code":"[blank]identityProvider.oauth2.client_id","message":"required"}]}}"#;
+    assert!(!is_duplicate_name(other));
+    assert!(!is_duplicate_name("not json"));
+}
+
 /// Init can complete every kickstart request it repeats, from env it has.
 #[test]
 fn every_kickstart_request_can_be_completed_by_init() {
