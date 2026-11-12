@@ -1,4 +1,4 @@
-import { SELF_HOSTED } from '@core/constant/featureFlags';
+import { SELF_HOSTED } from '@core/constant/selfHosted';
 import { SERVER_HOSTS } from '@core/constant/servers';
 import { platformFetch } from '@core/util/platformFetch';
 import { authServiceClient } from '@service-auth/client';

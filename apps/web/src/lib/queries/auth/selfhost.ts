@@ -39,7 +39,7 @@ export function useSetSelfHostAdminMutation() {
   return useMutation(() => ({
     mutationFn: (input: { userId: string; admin: boolean }) =>
       throwOnErr(() => selfHostClient.setAdmin(input.userId, input.admin)),
-    onSuccess: invalidateAdmin,
+    onSettled: invalidateAdmin,
   }));
 }
 
@@ -49,7 +49,7 @@ export function useSetSelfHostDisabledMutation() {
       throwOnErr(() =>
         selfHostClient.setDisabled(input.userId, input.disabled)
       ),
-    onSuccess: invalidateAdmin,
+    onSettled: invalidateAdmin,
   }));
 }
 
@@ -57,7 +57,7 @@ export function useSetSelfHostPolicyMutation() {
   return useMutation(() => ({
     mutationFn: (policy: SelfHostSignupPolicy) =>
       throwOnErr(() => selfHostClient.setPolicy(policy)),
-    onSuccess: invalidateAdmin,
+    onSettled: invalidateAdmin,
   }));
 }
 
@@ -69,6 +69,6 @@ export function useAllowedEmailMutation() {
           ? selfHostClient.removeAllowedEmail(input.email)
           : selfHostClient.addAllowedEmail(input.email)
       ),
-    onSuccess: invalidateAdmin,
+    onSettled: invalidateAdmin,
   }));
 }
