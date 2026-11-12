@@ -4,6 +4,7 @@ import { lazyNamed } from '@core/util/lazyNamed';
 import { Show, Suspense } from 'solid-js';
 import { CalendarSettings } from '../calendar/calendar-settings';
 import { CrmSettings as Crm } from '../crm/crm-settings';
+import { SelfHostAdmin } from '../selfhost-admin/SelfHostAdmin';
 import { Usage } from '../usage/usage';
 import { Account } from './Account';
 import { AccountManagers } from './AccountManagers';
@@ -111,6 +112,9 @@ export function SettingsTabContent(props: { tab: SettingsTab }) {
       </Show>
       <Show when={isCurrentTab('Admin')}>
         <Admin />
+      </Show>
+      <Show when={isCurrentTab('Self-host')}>
+        <SelfHostAdmin />
       </Show>
     </Suspense>
   );

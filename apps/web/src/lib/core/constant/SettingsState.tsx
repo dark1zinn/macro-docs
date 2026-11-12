@@ -40,7 +40,8 @@ export type SettingsTab =
   | 'Connected'
   | 'Email'
   | 'GitHub'
-  | 'Admin';
+  | 'Admin'
+  | 'Self-host';
 
 export const useSettingsState = () => {
   const mobileSettings = useMobileSettings();

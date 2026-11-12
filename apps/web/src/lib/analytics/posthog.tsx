@@ -1,5 +1,5 @@
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
-import type { RemoteFlag } from '@core/constant/featureFlags';
+import { type RemoteFlag, SELF_HOSTED } from '@core/constant/featureFlags';
 import { createAssertedContextProvider } from '@core/context/createContext';
 import { Telemetry } from '@macro-inc/observability';
 import type { JsonType } from 'posthog-js';
@@ -98,7 +98,12 @@ function readFeatureFlag<T extends JsonType>(
       }
 
       if (!posthog.flagsLoaded()) {
-        return { enabled: false, payload: fallbackPayload, loading: true };
+        // Self-hosted bundles never load PostHog, so its answer never comes.
+        return {
+          enabled: false,
+          payload: fallbackPayload,
+          loading: !SELF_HOSTED,
+        };
       }
 
       // The SDK is not reactive. Re-read on each successful refresh, including
