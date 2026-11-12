@@ -1,3 +1,4 @@
+import { loadSelfHostedAiProviders } from '@core/constant/selfHostedAiProviders';
 import { throwOnErr } from '@core/util/result';
 import { agentHarnessServiceClient } from '@service-agent-harness/client';
 import type {
@@ -6,6 +7,7 @@ import type {
 } from '@service-agent-harness/generated/schemas';
 import type { Harness } from '@service-storage/client';
 import { useQueries, useQuery } from '@tanstack/solid-query';
+import { availableAgentModels } from './availableAgentModels';
 
 export type AgentModelTarget = LoadAgentModelsRequest;
 
@@ -55,10 +57,19 @@ export function agentModelsQueryOptions(target: AgentModelTarget) {
       signal,
     }: {
       signal: AbortSignal;
-    }): Promise<LoadAgentModelsResponse> =>
-      await throwOnErr(() =>
+    }): Promise<LoadAgentModelsResponse> => {
+      const pending = throwOnErr(() =>
         agentHarnessServiceClient.loadAgentModels(target, signal)
-      ),
+      );
+      if (target.harness !== 'in-memory') return pending;
+      // Filter only after the self-host provider config has loaded, so the
+      // in-memory catalog is never cached unfiltered.
+      const [response] = await Promise.all([
+        pending,
+        loadSelfHostedAiProviders(),
+      ]);
+      return availableAgentModels(response);
+    },
     gcTime: MODELS_GC_TIME,
     staleTime,
     retry: false,

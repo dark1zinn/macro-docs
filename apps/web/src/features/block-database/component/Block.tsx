@@ -11,7 +11,11 @@ import {
 } from '@components/app/split-layout/layoutUtils';
 import { useHasPaidAccess } from '@core/auth/license';
 import { useBlockId } from '@core/block';
-import { DATABASE_MODEL, modelsForPlan } from '@core/component/AI/constant';
+import {
+  DATABASE_MODEL,
+  databaseModelForPlan,
+  planIncludesModel,
+} from '@core/component/AI/constant';
 import { DocumentBlockContainer } from '@core/component/DocumentBlockContainer';
 import { toast } from '@core/component/Toast/Toast';
 import { enableDatabases } from '@core/constant/featureFlags';
@@ -159,14 +163,15 @@ const Block: Component = () => {
     setOpeningChat(true);
     // A locked model gets the picker's treatment: the chat opens on the plan's
     // model and the paywall says why.
-    const canUseDatabaseModel = modelsForPlan(hasPaidAccess()).includes(
-      DATABASE_MODEL
+    const canUseDatabaseModel = planIncludesModel(
+      DATABASE_MODEL,
+      hasPaidAccess()
     );
     const chat = databaseChat(toQuerySchema(current, activeTableId()));
     try {
       await openChatWithInput(chat.input, {
         instructions: chat.instructions,
-        ...(canUseDatabaseModel ? { model: DATABASE_MODEL } : {}),
+        model: databaseModelForPlan(hasPaidAccess()),
       });
       if (!canUseDatabaseModel) showPaywall(PaywallKey.O1_LIMIT);
     } finally {
