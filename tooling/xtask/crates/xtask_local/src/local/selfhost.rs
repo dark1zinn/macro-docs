@@ -602,18 +602,40 @@ fn runtime() -> Result<tokio::runtime::Runtime> {
 
 /// Retry `attempt` until it succeeds or [`WAIT_LIMIT`] passes, then fail with
 /// its last error.
-fn retry<T>(what: &str, mut attempt: impl FnMut() -> Result<T>) -> Result<T> {
+fn retry<T>(what: &str, attempt: impl FnMut() -> Result<T>) -> Result<T> {
+    retry_for(what, WAIT_LIMIT, attempt)
+}
+
+fn retry_for<T>(what: &str, limit: Duration, mut attempt: impl FnMut() -> Result<T>) -> Result<T> {
     let start = Instant::now();
     loop {
         match attempt() {
             Ok(value) => return Ok(value),
-            Err(error) if start.elapsed() < WAIT_LIMIT => {
+            Err(error) if start.elapsed() < limit => {
                 eprintln!("waiting for {what}: {error:#}");
                 std::thread::sleep(RETRY_EVERY);
             }
             Err(error) => return Err(error).with_context(|| format!("giving up on {what}")),
         }
     }
+}
+
+/// The `#{ENV.*}` names the kickstart references, as the init container sees
+/// them (`macro_env_var` reads only `'static` names).
+const KICKSTART_ENV: &[&str] = &[
+    "FUSIONAUTH_API_KEY",
+    "JWT_SECRET_KEY",
+    "MACRO_MAIL_FROM",
+    "ISSUER",
+    "FUSIONAUTH_CLIENT_SECRET_KEY",
+    "INTERNAL_API_SECRET_KEY",
+];
+
+fn kickstart_env(name: &str) -> Option<String> {
+    KICKSTART_ENV
+        .iter()
+        .find(|known| **known == name)
+        .and_then(|known| macro_env_var::maybe_read_env(known))
 }
 
 fn provision() -> Result<()> {
@@ -644,14 +666,83 @@ fn provision() -> Result<()> {
     retry("kafka", || rt.block_on(kafka::provision_async(&brokers)))?;
     println!("Kafka topics created");
 
+    // The API key works once kickstart starts; the tenant exists from the
+    // start (the kickstart renames the built-in one).
     let tenant = format!("/api/tenant/{}", identity::TENANT_ID);
-    retry("the FusionAuth kickstart", || {
+    retry("FusionAuth", || {
         let (status, body) = fusionauth.call("GET", &tenant, None)?;
         anyhow::ensure!(status == 200, "tenant lookup returned {status}: {body}");
         Ok(())
     })?;
+    fusionauth.complete_kickstart()?;
     fusionauth.apply_redirect_urls(&redirect_urls(&public_url))?;
     println!("FusionAuth redirect URLs point at {public_url}");
+    Ok(())
+}
+
+/// What `complete_kickstart` does with one kickstart request.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum KickstartStep {
+    /// Create the entity with the request when `probe` answers 404.
+    Create { probe: String },
+    /// Re-apply the patch (only while completing an interrupted kickstart).
+    Patch,
+    /// Create the webhook unless one already calls the same URL.
+    Webhook,
+    /// Not repeated: the admin account is only made by the kickstart.
+    Skip,
+}
+
+pub(super) fn kickstart_step(method: &str, url: &str) -> Result<KickstartStep> {
+    Ok(match (method, url) {
+        ("POST", url) if url.starts_with("/api/key/import/") => KickstartStep::Create {
+            probe: url.replacen("/api/key/import/", "/api/key/", 1),
+        },
+        ("POST", url)
+            if url.starts_with("/api/lambda/")
+                || url.starts_with("/api/email/template/")
+                || url.starts_with("/api/application/") =>
+        {
+            KickstartStep::Create {
+                probe: url.to_owned(),
+            }
+        }
+        ("PATCH", url) if url.starts_with("/api/tenant/") => KickstartStep::Patch,
+        ("POST", "/api/webhook") => KickstartStep::Webhook,
+        ("POST", "/api/user/registration") => KickstartStep::Skip,
+        _ => bail!("no completion rule for kickstart request {method} {url}"),
+    })
+}
+
+/// Replace every `#{ENV.NAME}` in the document's strings with `lookup(NAME)`.
+pub(super) fn resolve_env(
+    value: &mut Value,
+    lookup: &dyn Fn(&str) -> Option<String>,
+) -> Result<()> {
+    match value {
+        Value::String(text) => {
+            while let Some(start) = text.find("#{ENV.") {
+                let end = text[start..]
+                    .find('}')
+                    .map(|end| start + end)
+                    .with_context(|| format!("unterminated #{{ENV.}} in {text:?}"))?;
+                let name = &text[start + "#{ENV.".len()..end];
+                let resolved = lookup(name).with_context(|| format!("{name} must be set"))?;
+                text.replace_range(start..=end, &resolved);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                resolve_env(item, lookup)?;
+            }
+        }
+        Value::Object(fields) => {
+            for field in fields.values_mut() {
+                resolve_env(field, lookup)?;
+            }
+        }
+        _ => {}
+    }
     Ok(())
 }
 
@@ -812,6 +903,67 @@ impl FusionAuth {
         *current = wanted;
         self.call_ok("PUT", &path, Some(&application))?;
         Ok(())
+    }
+
+    /// FusionAuth runs the kickstart once and stops at its first failed
+    /// request (a slow first lambda compile can time out on a loaded host);
+    /// it never retries. Wait for it to finish, then create whatever of it is
+    /// still missing from the generated secrets in this container's env.
+    fn complete_kickstart(&self) -> Result<()> {
+        let application = format!("/api/application/{}", identity::APPLICATION_ID);
+        let complete = retry_for("the FusionAuth kickstart", Duration::from_secs(120), || {
+            let (status, _) = self.call("GET", &application, None)?;
+            anyhow::ensure!(status == 200, "kickstart still running");
+            anyhow::ensure!(self.webhook_urls()?.len() >= 2, "kickstart still running");
+            Ok(())
+        });
+        if complete.is_ok() {
+            return Ok(());
+        }
+        println!("the FusionAuth kickstart stopped early; completing it");
+        let webhooks = self.webhook_urls()?;
+        for request in kickstart()?["requests"].as_array().into_iter().flatten() {
+            let method = request["method"].as_str().unwrap_or_default();
+            let url = request["url"].as_str().unwrap_or_default();
+            let step = kickstart_step(method, url)?;
+            if step == KickstartStep::Skip {
+                continue;
+            }
+            let mut body = request["body"].clone();
+            resolve_env(&mut body, &kickstart_env)?;
+            match step {
+                KickstartStep::Create { probe } => match self.call("GET", &probe, None)?.0 {
+                    200 => {}
+                    404 => {
+                        self.call_ok("POST", url, Some(&body))?;
+                        println!("created {url}");
+                    }
+                    status => bail!("FusionAuth GET {probe} returned {status}"),
+                },
+                KickstartStep::Patch => {
+                    self.call_ok("PATCH", url, Some(&body))?;
+                }
+                KickstartStep::Webhook => {
+                    let target = body["webhook"]["url"].as_str().unwrap_or_default();
+                    if !webhooks.iter().any(|existing| existing == target) {
+                        self.call_ok("POST", url, Some(&body))?;
+                        println!("created webhook {target}");
+                    }
+                }
+                KickstartStep::Skip => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn webhook_urls(&self) -> Result<Vec<String>> {
+        let webhooks: Value = serde_json::from_str(&self.call_ok("GET", "/api/webhook", None)?)?;
+        Ok(webhooks["webhooks"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|webhook| webhook["url"].as_str().map(str::to_owned))
+            .collect())
     }
 
     /// Create the entity at `path`, or replace it when it already exists.
