@@ -216,3 +216,37 @@ fn sso_requests_exist_only_for_configured_providers() {
         )]
     );
 }
+
+/// Init can complete every kickstart request it repeats, from env it has.
+#[test]
+fn every_kickstart_request_can_be_completed_by_init() {
+    let known = |name: &str| KICKSTART_ENV.contains(&name).then(|| "x".to_owned());
+    for request in kickstart().unwrap()["requests"].as_array().unwrap() {
+        let method = request["method"].as_str().unwrap();
+        let url = request["url"].as_str().unwrap();
+        let step = kickstart_step(method, url).unwrap();
+        if step != KickstartStep::Skip {
+            let mut body = request["body"].clone();
+            resolve_env(&mut body, &known).unwrap_or_else(|e| panic!("{method} {url}: {e:#}"));
+        }
+    }
+}
+
+#[test]
+fn resolve_env_substitutes_and_fails_on_unknown_names() {
+    let lookup = |name: &str| (name == "A").then(|| "1".to_owned());
+    let mut value = json!({"x": ["pre-#{ENV.A}-#{ENV.A}"]});
+    resolve_env(&mut value, &lookup).unwrap();
+    assert_eq!(value, json!({"x": ["pre-1-1"]}));
+    assert!(resolve_env(&mut json!("#{ENV.B}"), &lookup).is_err());
+}
+
+#[test]
+fn the_key_import_is_probed_by_key_id() {
+    assert_eq!(
+        kickstart_step("POST", "/api/key/import/abc").unwrap(),
+        KickstartStep::Create {
+            probe: "/api/key/abc".into()
+        }
+    );
+}
