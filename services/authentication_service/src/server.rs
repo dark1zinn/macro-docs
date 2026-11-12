@@ -768,6 +768,20 @@ async fn run_server() -> anyhow::Result<()> {
         macro_event_broker.clone(),
     ));
 
+    let selfhost = if selfhost::composition::enabled() {
+        let handle = selfhost::composition::build(
+            db.clone(),
+            user_roles_and_permissions_service.clone(),
+            Arc::new(auth_client.clone()),
+        );
+        handle
+            .backfill()
+            .await
+            .context("selfhost backfill failed")?;
+        Some(Arc::new(handle))
+    } else {
+        None
+    };
     let server_result = api::setup_and_serve(
         ApiContext {
             inbox_connections: Arc::new(email::domain::inbox_entitlement::InboxConnectionService(
@@ -844,6 +858,7 @@ async fn run_server() -> anyhow::Result<()> {
             stripe_prices,
             ai_billing_service,
             ai_payment_gateway: Arc::new(ai_payment_gateway),
+            selfhost,
         },
         config.port,
     )

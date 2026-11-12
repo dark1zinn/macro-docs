@@ -2657,6 +2657,7 @@
       "crates/roles_and_permissions",
       "crates/s3_key",
       "crates/secretsmanager_client",
+      "crates/selfhost",
       "crates/serde_utils",
       "crates/ses_client",
       "crates/share_permission_db_utils",
@@ -13796,6 +13797,17 @@
       "crates/user_quota",
       "crates/workspace-hack",
       "tooling/seed_cli"
+    ],
+    "selfhost": [
+      "crates/cowlike",
+      "crates/fusionauth",
+      "crates/macro_env_var",
+      "crates/macro_user_id",
+      "crates/non_empty",
+      "crates/roles_and_permissions",
+      "crates/selfhost",
+      "crates/upstream_error",
+      "crates/workspace-hack"
     ],
     "serde_utils": [
       "crates/serde_utils",

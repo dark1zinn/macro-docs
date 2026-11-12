@@ -6,6 +6,7 @@ exclude = ["vendor"]
 members = [
   "crates/access_requests",
   "crates/agent_api_keys",
+  "crates/selfhost",
   "crates/routines",
   "crates/routine_program",
   "crates/activity",
