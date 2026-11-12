@@ -128,11 +128,14 @@ fn free_disk() -> Step<Run> {
     "#})
 }
 
-/// GHCR names must be lowercase; owners need not be.
+/// GHCR names must be lowercase; owners need not be. A ref name may hold
+/// characters a tag cannot (`/` in `feature/x`), so the tag is sanitized.
 fn image_prefix() -> Step<Run> {
     Step::new("Image prefix")
         .run(indoc::indoc! {r#"
             echo "prefix=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/macro-selfhost" >> "$GITHUB_OUTPUT"
+            tag="$(printf '%s' "$GITHUB_REF_NAME" | tr -c 'A-Za-z0-9_.-' '-' | cut -c1-128)"
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
         "#})
         .id("prefix")
 }
@@ -174,7 +177,7 @@ fn build_push(image: &Image) -> Step<Use> {
         .add_with((
             "tags",
             format!(
-                "{repository}:${{{{ github.ref_name }}}}\n{repository}:sha-${{{{ github.sha }}}}"
+                "{repository}:${{{{ steps.prefix.outputs.tag }}}}\n{repository}:sha-${{{{ github.sha }}}}"
             ),
         ))
         // One scope per Dockerfile, so the init image reuses the services
