@@ -5,11 +5,17 @@ name: Self-host images
   push:
     branches:
     - main
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      images:
+        description: 'Image groups to build, comma-separated: rust, gateway, workers'
+        type: string
+        default: rust,gateway,workers
 permissions:
   contents: read
 jobs:
   rust:
+    if: github.event_name != 'workflow_dispatch' || contains(inputs.images, 'rust')
     name: Rust services and init
     runs-on: ubuntu-latest
     permissions:
@@ -68,6 +74,7 @@ jobs:
         cache-to: type=gha,scope=selfhost-docker-rust.Dockerfile,mode=max
         target: init
   gateway:
+    if: github.event_name != 'workflow_dispatch' || contains(inputs.images, 'gateway')
     name: Gateway and web app
     runs-on: ubuntu-latest
     permissions:
@@ -112,6 +119,7 @@ jobs:
         cache-from: type=gha,scope=selfhost-docker-gateway.Dockerfile
         cache-to: type=gha,scope=selfhost-docker-gateway.Dockerfile,mode=max
   workers:
+    if: github.event_name != 'workflow_dispatch' || contains(inputs.images, 'workers')
     name: Workers and search
     runs-on: ubuntu-latest
     permissions:
