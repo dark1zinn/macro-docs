@@ -4,9 +4,7 @@ name: Self-host images
 'on':
   push:
     branches:
-    - development
-    tags:
-    - selfhost-v*
+    - main
   workflow_dispatch: {}
 permissions:
   contents: read
