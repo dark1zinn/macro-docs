@@ -36,6 +36,7 @@ mod oauth;
 mod oauth2;
 mod permissions;
 mod permissions_extractor;
+pub(crate) mod selfhost_admin;
 mod session;
 pub(crate) mod signup_policy;
 mod user;
@@ -243,4 +244,5 @@ fn api_router(state: ApiContext) -> Router<ApiContext> {
                 macro_middleware::connection_drop_prevention_handler,
             )),
         )
+        .merge(selfhost_admin::router_if_enabled(&state))
 }

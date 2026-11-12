@@ -2403,6 +2403,7 @@ dependencies = [
  "rootcause",
  "rsa",
  "secretsmanager_client",
+ "selfhost",
  "serde",
  "serde_json",
  "serde_urlencoded",
@@ -18528,6 +18529,26 @@ dependencies = [
  "rustc-hash 2.1.2",
  "servo_arc 0.4.3",
  "smallvec",
+]
+
+[[package]]
+name = "selfhost"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "fusionauth",
+ "macro_db_migrator",
+ "macro_env_var",
+ "macro_user_id",
+ "non_empty",
+ "roles_and_permissions",
+ "sqlx",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "workspace-hack",
 ]
 
 [[package]]

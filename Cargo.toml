@@ -12,6 +12,7 @@ members = [
   "crates/agent_credentials",
   "crates/agent_git",
   "crates/team_agents",
+  "crates/selfhost",
   "crates/routines",
   "crates/routine_program",
   "crates/shown_text",

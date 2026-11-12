@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO selfhost_settings (id, signup_policy, updated_by) VALUES (TRUE, $1, $2)\n               ON CONFLICT (id) DO UPDATE\n               SET signup_policy = EXCLUDED.signup_policy, updated_at = now(), updated_by = EXCLUDED.updated_by",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "27a1a106bf3c6724f420c9d03e8672d38cb868c9d779dcfe3a8ad969eba56eb5"
+}

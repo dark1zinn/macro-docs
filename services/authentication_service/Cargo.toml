@@ -175,6 +175,7 @@ roles_and_permissions = { path = "../../crates/roles_and_permissions" }
 rootcause = { workspace = true }
 rsa = { workspace = true, features = ["getrandom"] }
 secretsmanager_client = { path = "../../crates/secretsmanager_client" }
+selfhost = { path = "../../crates/selfhost" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_utils = { path = "../../crates/serde_utils", features = ["urlencode"] }
