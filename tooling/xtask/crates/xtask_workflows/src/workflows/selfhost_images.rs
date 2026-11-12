@@ -8,9 +8,11 @@
 //! GitHub-hosted runners: the job only needs Docker, and forks have no
 //! Namespace profiles. Layers are cached in the Actions cache per image.
 
+use std::collections::HashMap;
+
 use gh_workflow::{
     Concurrency, Event, Expression, Job, Level, Permissions, Push, Run, Step, Use, Workflow,
-    WorkflowDispatch,
+    WorkflowDispatch, WorkflowDispatchInput,
 };
 
 use crate::workflows::steps;
@@ -87,20 +89,39 @@ pub fn selfhost_images() -> Workflow {
     Workflow::new("Self-host images")
         .on(Event::default()
             .push(Push::default().add_branch(BRANCH))
-            .workflow_dispatch(WorkflowDispatch::default()))
+            .workflow_dispatch(dispatch()))
         .permissions(Permissions::default().contents(Level::Read))
         .concurrency(
             Concurrency::new(Expression::new("${{ github.workflow }}-${{ github.ref }}"))
                 .cancel_in_progress(true),
         )
-        .add_job("rust", job("Rust services and init", RUST))
-        .add_job("gateway", job("Gateway and web app", GATEWAY))
-        .add_job("workers", job("Workers and search", WORKERS))
+        .add_job("rust", job("rust", "Rust services and init", RUST))
+        .add_job("gateway", job("gateway", "Gateway and web app", GATEWAY))
+        .add_job("workers", job("workers", "Workers and search", WORKERS))
 }
 
-fn job(name: &str, images: &[Image]) -> Job {
+/// A manual run picks which image groups to rebuild (all by default), so a
+/// web-only change can skip the long Rust build. Pushes always build every
+/// group. One string input: `WorkflowDispatch` keeps inputs in a `HashMap`,
+/// whose order would make the generated file unstable.
+fn dispatch() -> WorkflowDispatch {
+    let images = WorkflowDispatchInput {
+        description: "Image groups to build, comma-separated: rust, gateway, workers".into(),
+        required: false,
+        input_type: "string".into(),
+        default: Some("rust,gateway,workers".into()),
+    };
+    WorkflowDispatch {
+        inputs: HashMap::from([("images".into(), images)]),
+    }
+}
+
+fn job(group: &str, name: &str, images: &[Image]) -> Job {
     let job = Job::default()
         .name(name)
+        .cond(Expression::new(format!(
+            "github.event_name != 'workflow_dispatch' || contains(inputs.images, '{group}')"
+        )))
         .runs_on("ubuntu-latest")
         .timeout_minutes(360u32)
         .permissions(
