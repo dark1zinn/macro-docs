@@ -17,11 +17,18 @@ Kafka topics and FusionAuth redirects. Both are `cargo x selfhost-init`
 exports its secret group. Services run with `ENVIRONMENT=local`; the public
 origin comes from `MACRO_PUBLIC_URL`.
 
+Self-host mode (`MACRO_SELF_HOSTED=true` for services, `VITE_SELF_HOSTED=true`
+in the web build) entitles every account, makes the first account root admin,
+gates new accounts on a DB signup policy and turns off product analytics. The
+backend lives in `crates/selfhost`; the web reads `SELF_HOSTED` from
+`apps/web/src/lib/core/constant/featureFlags.ts`.
+
 ## Start here
 
 - `../docker-compose.yml`: services, profiles, networks, the shared env.
 - `gateway/Caddyfile`: every public route.
 - `../tooling/xtask/crates/xtask_local/src/local/selfhost.rs`: secrets, kickstart, provisioning.
+- `../crates/selfhost`: entitlements, root admin, signup policy, admin API rules.
 
 ## Recipes
 
@@ -46,6 +53,10 @@ origin comes from `MACRO_PUBLIC_URL`.
 - A secret set in compose `environment` silently wins over the generated one.
 - Coolify applies every `${VAR:?}` regardless of profile: only core settings may be required.
 - Floci accepts unsigned requests; the gateway's `/local-storage` allowlist is the only guard.
+- This is a fork that merges upstream: keep self-host logic in new files and
+  only short hooks in upstream code (`authentication_service` login/webhook
+  handlers, `server.rs`, the web flag sites).
+- Leave `POSTHOG_API_KEY` out of `x-macro-env`: a set key turns analytics on.
 
 ## Related
 

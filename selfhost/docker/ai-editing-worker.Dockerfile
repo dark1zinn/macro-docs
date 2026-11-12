@@ -17,4 +17,5 @@ CMD ["sh", "-c", "\
     \"${OPENAI_API_KEY:-}\" \"${ANTHROPIC_API_KEY:-}\" \"${CEREBRAS_API_KEY:-}\" > .dev.vars \
   && exec npx wrangler dev --env local --ip 0.0.0.0 \
     --var SYNC_WS_BASE:ws://sync-service:8787 \
-    --var CANVAS_RENDER_URL:${MACRO_PUBLIC_URL}/app/canvas-render.html"]
+    --var CANVAS_RENDER_URL:${MACRO_PUBLIC_URL}/app/canvas-render.html \
+    --var OTEL_EXPORTER_OTLP_ENDPOINT:${MACRO_OTEL_HTTP_ENDPOINT:+${MACRO_OTEL_HTTP_ENDPOINT}/v1/traces}"]
