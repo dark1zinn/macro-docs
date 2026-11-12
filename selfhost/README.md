@@ -50,8 +50,8 @@ built with `VITE_SELF_HOSTED=true`):
 - **Only models you have keys for.** Model pickers list the providers whose
   key is set in `.env` (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
   `GOOGLE_GENERATIVE_AI_API_KEY`, `FIREWORK_API_KEY`, `CEREBRAS_API_KEY`);
-  restart the gateway after changing them. Voice dictation always needs an
-  OpenAI key.
+  run `docker compose up -d` after changing them (`restart` keeps the old
+  values). Voice dictation always needs an OpenAI key.
 - **No product analytics.** The web app loads no analytics or ad scripts,
   and the services send nothing to PostHog or Meta.
 
