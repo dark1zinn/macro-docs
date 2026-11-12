@@ -1,8 +1,9 @@
 //! `Self-host images` — builds the images the self-host compose stack pulls
 //! (`docker-compose.yml`, built from the sources `docker-compose.build.yml`
 //! names) and pushes them to the repository owner's GitHub Container
-//! Registry. Runs on pushes to `development`, on `selfhost-v*` tags and on
-//! demand. Generated into `selfhost-images.yml`.
+//! Registry. Runs on pushes to `main`; any other branch publishes only when
+//! dispatched by hand, under its own (sanitized) branch-name tag, so it never
+//! replaces the `main` images. Generated into `selfhost-images.yml`.
 //!
 //! GitHub-hosted runners: the job only needs Docker, and forks have no
 //! Namespace profiles. Layers are cached in the Actions cache per image.
@@ -14,9 +15,8 @@ use gh_workflow::{
 
 use crate::workflows::steps;
 
-/// The branch whose pushes publish the `development` images.
-pub const BRANCH: &str = "development";
-pub const TAG_PATTERN: &str = "selfhost-v*";
+/// The branch whose pushes publish the `main` images compose pulls by default.
+pub const BRANCH: &str = "main";
 
 /// One published image: `<owner registry>/macro-selfhost-<name>`.
 pub struct Image {
@@ -86,7 +86,7 @@ pub const WORKERS: &[Image] = &[
 pub fn selfhost_images() -> Workflow {
     Workflow::new("Self-host images")
         .on(Event::default()
-            .push(Push::default().add_branch(BRANCH).add_tag(TAG_PATTERN))
+            .push(Push::default().add_branch(BRANCH))
             .workflow_dispatch(WorkflowDispatch::default()))
         .permissions(Permissions::default().contents(Level::Read))
         .concurrency(

@@ -141,8 +141,10 @@ Only images of active profiles are built. Set `COMPOSE_PROFILES` before
 building `search` or `ai`. The Rust and web builds need about 16 GB of RAM
 and 40 GB of disk; they run at low CPU priority, and `CARGO_BUILD_JOBS=4`
 caps their parallelism on a host doing other work. To publish to your own
-registry, set `MACRO_IMAGE_PREFIX` and run `docker compose ... push`, or push
-a fork's `development` branch so the workflow publishes to its GHCR.
+registry, set `MACRO_IMAGE_PREFIX` and run `docker compose ... push`. In a
+fork, pushes to `main` publish the images compose pulls by default (`main`);
+run the **Self-host images** workflow by hand on any other branch to publish
+that branch's images under its name, then set `MACRO_VERSION` to it.
 
 ## Known limits
 
@@ -159,12 +161,15 @@ a fork's `development` branch so the workflow publishes to its GHCR.
 
 ## Keeping a fork current
 
-Keep `main` identical to upstream and the self-host work on `development`:
+The fork's `upstream` branch mirrors Macro's `main`; the fork's own `main`
+carries the self-host stack on top of it, and work branches merge into
+`main`. Merge rather than rebase once `main` is published, so its history
+never changes under deployments:
 
 ```sh
 git fetch upstream
-git switch main && git merge --ff-only upstream/main
-git switch development && git rebase main
+git switch upstream && git merge --ff-only upstream/main && git push origin upstream
+git switch main && git merge upstream
 cargo test -p xtask_local --features selfhost selfhost
 ```
 
