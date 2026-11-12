@@ -1026,13 +1026,22 @@ impl FusionAuth {
             .collect())
     }
 
-    /// Create the entity at `path` unless it exists. Returns whether it was created.
+    /// Create the entity at `path` unless it exists. Returns whether it was
+    /// created. An entity FusionAuth already holds under another id with the
+    /// same unique name (made through the admin UI, say) counts as existing.
     fn create_if_missing(&self, path: &str, body: &Value) -> Result<bool> {
         match self.call("GET", path, None)?.0 {
             200 => Ok(false),
             404 => {
-                self.call_ok("POST", path, Some(body))?;
-                Ok(true)
+                let (status, text) = self.call("POST", path, Some(body))?;
+                match status {
+                    200..300 => Ok(true),
+                    400 if is_duplicate_name(&text) => {
+                        println!("{path}: one with the same name already exists; keeping it");
+                        Ok(false)
+                    }
+                    _ => bail!("FusionAuth POST {path} returned {status}: {text}"),
+                }
             }
             status => bail!("FusionAuth GET {path} returned {status}"),
         }
@@ -1049,4 +1058,21 @@ impl FusionAuth {
         self.call_ok(method, path, Some(body))?;
         Ok(())
     }
+}
+
+/// Whether a FusionAuth validation error says the entity's name is taken.
+pub(super) fn is_duplicate_name(error_body: &str) -> bool {
+    serde_json::from_str::<Value>(error_body).is_ok_and(|error| {
+        error["fieldErrors"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter(|(field, _)| field.ends_with(".name"))
+            .flat_map(|(_, errors)| errors.as_array().into_iter().flatten())
+            .any(|error| {
+                error["code"]
+                    .as_str()
+                    .is_some_and(|code| code.starts_with("[duplicate]"))
+            })
+    })
 }
