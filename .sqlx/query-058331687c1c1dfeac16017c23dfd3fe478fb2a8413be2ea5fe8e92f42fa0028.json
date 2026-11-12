@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM selfhost_disabled_user WHERE user_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "058331687c1c1dfeac16017c23dfd3fe478fb2a8413be2ea5fe8e92f42fa0028"
+}

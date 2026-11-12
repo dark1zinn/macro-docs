@@ -336,6 +336,13 @@ async fn create_user_webhook(ctx: &ApiContext, req: FusionAuthUserWebhook) -> an
         anyhow::bail!("cannot login through secondary account link");
     }
 
+    // Self-host signup policy, for paths that skip the login handlers (SSO).
+    if let Some(selfhost) = ctx.selfhost.as_ref()
+        && !selfhost.authorize_signup(&email).await?
+    {
+        anyhow::bail!("self-host signup policy denied user creation");
+    }
+
     let is_agent = requested_agent || has_pending_agent_invite(&ctx.teams_service, &email).await?;
     tracing::Span::current().record("is_agent", is_agent);
 
@@ -355,6 +362,10 @@ async fn create_user_webhook(ctx: &ApiContext, req: FusionAuthUserWebhook) -> an
         is_agent,
     )
     .await?;
+
+    if let Some(selfhost) = ctx.selfhost.as_ref() {
+        selfhost.on_user_created(&email).await?;
+    }
 
     let span = tracing::Span::current();
     span.record("user_id", user_id.as_str());

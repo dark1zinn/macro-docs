@@ -1,0 +1,23 @@
+[package]
+edition = "2024"
+name = "selfhost"
+publish = false
+version = "0.1.0"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+fusionauth = { path = "../fusionauth" }
+macro_env_var = { path = "../macro_env_var" }
+macro_user_id = { path = "../macro_user_id" }
+non_empty = { path = "../non_empty" }
+roles_and_permissions = { path = "../roles_and_permissions" }
+sqlx = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+workspace-hack = { version = "0.1", path = "../workspace-hack" }
+
+[dev-dependencies]
+macro_db_migrator = { path = "../macro_db_migrator" }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
