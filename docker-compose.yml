@@ -139,6 +139,8 @@ x-macro-env: &macro-env
   SMTP_HOST: mail-relay
   SMTP_PORT: "587"
   SENDER_BASE_ADDRESS: ${MACRO_MAIL_DOMAIN:?set MACRO_MAIL_DOMAIN in .env}
+  # FusionAuth's sender, also read by init when it completes the kickstart.
+  MACRO_MAIL_FROM: noreply@${MACRO_MAIL_DOMAIN}
   # Agents. Managed sandboxes need Daytona; the host Docker socket is never mounted.
   HARNESS_BOT_ID: 00000000-0000-0000-0000-00000000a9e7
   DAYTONA_SNAPSHOT: macro-agent-harness
