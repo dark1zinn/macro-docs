@@ -4,24 +4,31 @@
 #   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d
 #
 # Each image is built once, by the first service that uses it; the services
-# sharing an image reuse its tag. The Rust and web builds need ~16 GB of RAM.
+# sharing an image reuse its tag. The Rust and web builds need ~16 GB of RAM;
+# set CARGO_BUILD_JOBS to cap parallel rustc jobs on a smaller or busy host.
 services:
   authentication-service:
     build:
       context: .
       dockerfile: selfhost/docker/rust.Dockerfile
       target: services
+      args:
+        CARGO_BUILD_JOBS: ${CARGO_BUILD_JOBS:-}
 
   bootstrap:
     build:
       context: .
       dockerfile: selfhost/docker/rust.Dockerfile
       target: init
+      args:
+        CARGO_BUILD_JOBS: ${CARGO_BUILD_JOBS:-}
 
   gateway:
     build:
       context: .
       dockerfile: selfhost/docker/gateway.Dockerfile
+      args:
+        CARGO_BUILD_JOBS: ${CARGO_BUILD_JOBS:-}
 
   sync_service:
     build:

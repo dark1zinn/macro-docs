@@ -26,9 +26,14 @@ RUN bun install --frozen-lockfile \
     && (cd packages/sdk && bun install --frozen-lockfile)
 # search_processing_service builds without PDF parsing, whose bundled library
 # is amd64-only; the local stack runs it the same way.
+#
+# CARGO_BUILD_JOBS caps parallel rustc jobs (default: every core), and the
+# build runs at a lower CPU priority so a host serving other work stays usable.
+ARG CARGO_BUILD_JOBS=
 RUN --mount=type=cache,id=macro-selfhost-cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=macro-selfhost-cargo-target,target=/app/target \
-    cargo build --release --locked \
+    export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-$(nproc)}" \
+    && nice -n 10 cargo build --release --locked \
         --bin authentication_service \
         --bin connection_gateway_service \
         --bin contacts_service \
@@ -44,10 +49,10 @@ RUN --mount=type=cache,id=macro-selfhost-cargo-registry,target=/usr/local/cargo/
         --bin agent_harness_service \
         --bin whatsapp_session_service \
         --bin slack_import_worker \
-    && cargo build --release --locked -p search_processing_service \
+    && nice -n 10 cargo build --release --locked -p search_processing_service \
         --no-default-features --features processing,service \
         --bin search_processing_service \
-    && cargo build --release --locked -p xtask_local --features selfhost --bin xtask_local \
+    && nice -n 10 cargo build --release --locked -p xtask_local --features selfhost --bin xtask_local \
     && mkdir -p /out \
     && cp target/release/authentication_service \
           target/release/connection_gateway_service \
@@ -65,8 +70,10 @@ RUN --mount=type=cache,id=macro-selfhost-cargo-registry,target=/usr/local/cargo/
           target/release/whatsapp_session_service \
           target/release/slack_import_worker \
           target/release/search_processing_service \
-          target/release/xtask_local \
-          /out/
+          /out/ \
+    && mkdir -p /init \
+    && cp target/release/xtask_local /init/ \
+    && strip /out/* /init/*
 
 FROM debian:trixie-slim AS services
 RUN apt-get update \
@@ -78,7 +85,6 @@ ENV DENO_BINARY=/usr/local/bin/deno \
     PORT=8080
 WORKDIR /app
 COPY --from=builder /out/ /app/out/
-RUN rm /app/out/xtask_local
 EXPOSE 8080
 
 FROM debian:trixie-slim AS init
@@ -88,4 +94,4 @@ RUN apt-get update \
 COPY --from=oven/bun:1 /usr/local/bin/bun /usr/local/bin/bun
 COPY infra/stacks/opensearch/helpers /opt/opensearch-helpers
 RUN cd /opt/opensearch-helpers && bun install --frozen-lockfile
-COPY --from=builder /out/xtask_local /usr/local/bin/xtask_local
+COPY --from=builder /init/xtask_local /usr/local/bin/xtask_local

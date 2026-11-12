@@ -16,8 +16,12 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends clang llvm jq \
     && rm -rf /var/lib/apt/lists/* \
     && rustup target add wasm32-unknown-unknown
+# CARGO_BUILD_JOBS caps rustc jobs per cargo process. `build-wasm` runs its
+# nine packages at once, so the default is a quarter of the cores each.
+ARG CARGO_BUILD_JOBS=
 RUN --mount=type=cache,id=macro-selfhost-cargo-registry,target=/usr/local/cargo/registry \
-    cargo install --locked just wasm-pack
+    export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-$(nproc)}" \
+    && nice -n 10 cargo install --locked just wasm-pack
 COPY --from=oven/bun:1 /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /app
 COPY . .
@@ -25,12 +29,13 @@ RUN bun install --frozen-lockfile
 WORKDIR /app/apps/web
 RUN --mount=type=cache,id=macro-selfhost-cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=macro-selfhost-wasm-target,target=/app/target \
-    just build-wasm
+    export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-$(( ($(nproc) + 3) / 4 ))}" \
+    && nice -n 10 just build-wasm
 RUN MODE=development NODE_ENV=production NODE_OPTIONS=--max-old-space-size=8192 \
     VITE_LOCAL_SERVERS=ALL \
     VITE_LOCAL_BACKEND_ORIGIN=same-origin \
     VITE_AI_EDITING_WORKER_URL=/ai-editing \
-    bun run --bun build \
+    nice -n 10 bun run --bun build \
     && bun scripts/cache-wasm/cli.ts package-dist --dist dist
 
 FROM caddy:2-alpine
