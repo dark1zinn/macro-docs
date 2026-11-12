@@ -12,8 +12,8 @@ import {
   DEV_MODE_ENV,
   LOCAL_ONLY,
   PROD_MODE_ENV,
-  SELF_HOSTED,
 } from '@core/constant/featureFlags';
+import { SELF_HOSTED } from '@core/constant/selfHosted';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import { getPlatform, isTauri } from '@core/util/platform';
 import {
