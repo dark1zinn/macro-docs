@@ -590,7 +590,7 @@ fn bootstrap(secrets_dir: &Path, kickstart_dir: &Path) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 fn env(name: &'static str) -> Result<String> {
-    macro_env_var::read_env(name).with_context(|| format!("{name} must be set"))
+    Ok(macro_env_var::read_env(name)?)
 }
 
 fn runtime() -> Result<tokio::runtime::Runtime> {
