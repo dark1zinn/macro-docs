@@ -39,10 +39,10 @@ import {
   enableCalendarScheduling,
   enableChatV3Agents,
   enableCrm,
-  SELF_HOSTED,
 } from './featureFlags';
 import { PERMISSION_IDS } from './permissions';
 import type { SettingsTab } from './SettingsState';
+import { SELF_HOSTED } from './selfHosted';
 
 export type SettingsTabItem = {
   tab: SettingsTab;

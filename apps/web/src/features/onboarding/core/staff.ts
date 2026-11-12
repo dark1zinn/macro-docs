@@ -1,4 +1,4 @@
-import { SELF_HOSTED } from '@core/constant/featureFlags';
+import { SELF_HOSTED } from '@core/constant/selfHosted';
 import { emailDomain } from './team';
 
 const MACRO_STAFF_DOMAIN = 'macro.com';

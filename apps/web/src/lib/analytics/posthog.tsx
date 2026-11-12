@@ -1,5 +1,6 @@
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
-import { type RemoteFlag, SELF_HOSTED } from '@core/constant/featureFlags';
+import type { RemoteFlag } from '@core/constant/featureFlags';
+import { SELF_HOSTED } from '@core/constant/selfHosted';
 import { createAssertedContextProvider } from '@core/context/createContext';
 import { Telemetry } from '@macro-inc/observability';
 import type { JsonType } from 'posthog-js';

@@ -30,7 +30,6 @@ vi.mock('@core/constant/featureFlags', () => ({
   DEV_MODE_ENV: false,
   LOCAL_ONLY: false,
   PROD_MODE_ENV: true,
-  SELF_HOSTED: false,
 }));
 vi.mock('posthog-js', () => ({
   PostHog: class {
