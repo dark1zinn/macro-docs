@@ -703,6 +703,22 @@ services:
       disable: true
 
   # ==========================================================================
+  # Profile `mailcatcher`: keep every outgoing mail (login codes included) in
+  # a local inbox instead of delivering it. For trying the stack without an
+  # SMTP provider: set SMTP_RELAY_HOST=mailpit, SMTP_RELAY_PORT=1025 and
+  # SMTP_RELAY_TLS_LEVEL=may. Its inbox is published on loopback only: it
+  # holds login codes, so never expose it publicly.
+  # ==========================================================================
+  mailpit:
+    profiles: [mailcatcher]
+    image: axllent/mailpit:v1.20
+    restart: unless-stopped
+    logging: *logging
+    ports:
+      - "${MAILPIT_BIND:-127.0.0.1}:${MAILPIT_PORT:-8025}:8025"
+    networks: [edge]
+
+  # ==========================================================================
   # Profile `https`: automatic Let's Encrypt TLS in front of the gateway
   # ==========================================================================
   tls-proxy:

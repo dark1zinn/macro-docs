@@ -63,6 +63,7 @@ Enable profiles with `COMPOSE_PROFILES` in `.env`, comma-separated, or with
 |`whatsapp`|WhatsApp linked devices||
 |`slack`|Slack import worker||
 |`https`|Automatic TLS on 80/443|`MACRO_DOMAIN`; don't use it under Coolify|
+|`mailcatcher`|Mailpit: keeps every outgoing mail in a local inbox at `http://127.0.0.1:8025` instead of delivering it|`SMTP_RELAY_HOST=mailpit`, `SMTP_RELAY_PORT=1025`, `SMTP_RELAY_TLS_LEVEL=may`. For trying the stack only; the relay still refuses recipients whose domain has no mail server|
 
 When a feature is off, its API routes answer `503`.
 
