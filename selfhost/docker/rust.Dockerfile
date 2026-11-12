@@ -89,7 +89,7 @@ EXPOSE 8080
 
 FROM debian:trixie-slim AS init
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl openssl \
+    && apt-get install -y --no-install-recommends ca-certificates curl openssl openssh-client \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=oven/bun:1 /usr/local/bin/bun /usr/local/bin/bun
 COPY infra/stacks/opensearch/helpers /opt/opensearch-helpers
