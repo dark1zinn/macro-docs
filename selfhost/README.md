@@ -44,9 +44,14 @@ built with `VITE_SELF_HOSTED=true`):
 - **Signups are invite-only after that.** A new account is accepted when its
   email is on the allowed list or has a pending team invite. The
   administrator changes this, allows emails, promotes other administrators
-  and disables accounts under **Settings → Admin**.
+  and disables accounts under **Settings → Self-host**.
 - **Every account has every feature.** There are no plans, trials, billing
   or usage limits, and onboarding can be skipped at any step.
+- **Only models you have keys for.** Model pickers list the providers whose
+  key is set in `.env` (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+  `GOOGLE_GENERATIVE_AI_API_KEY`, `FIREWORK_API_KEY`, `CEREBRAS_API_KEY`);
+  restart the gateway after changing them. Voice dictation always needs an
+  OpenAI key.
 - **No product analytics.** The web app loads no analytics or ad scripts,
   and the services send nothing to PostHog or Meta.
 
@@ -162,7 +167,9 @@ caps their parallelism on a host doing other work. To publish to your own
 registry, set `MACRO_IMAGE_PREFIX` and run `docker compose ... push`. In a
 fork, pushes to `main` publish the images compose pulls by default (`main`);
 run the **Self-host images** workflow by hand on any other branch to publish
-that branch's images under its name, then set `MACRO_VERSION` to it.
+that branch's images under its name, then set `MACRO_VERSION` to it. A
+manual run builds the groups listed in its `images` input (`rust`, `gateway`,
+`workers`; all by default), so a web-only change can skip the Rust build.
 
 ## Known limits
 

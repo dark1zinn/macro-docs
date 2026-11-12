@@ -45,6 +45,14 @@
 			respond "ok" 200
 		}
 
+		# Runtime facts the prebuilt web app can't know: the AI providers with
+		# a key set (comma-separated), so model pickers offer only those.
+		handle /selfhost/config.json {
+			header Content-Type application/json
+			header Cache-Control no-store
+			respond `{"ai_providers":"{$MACRO_AI_PROVIDERS}"}` 200
+		}
+
 		# --- Rust services (the local inventory's path prefixes) -----------
 		handle_path /auth/* {
 			reverse_proxy authentication-service:8080
