@@ -3,6 +3,7 @@
 **/.env*
 **/*.env
 **/*.env.*
+!selfhost/.env.example
 **/.dev.vars*
 .idea/
 **/.DS_Store
