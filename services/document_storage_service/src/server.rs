@@ -915,18 +915,22 @@ async fn run_server() -> anyhow::Result<()> {
         call::inbound::axum_router::RateLimitedCallStarts(call_public_rate_limiter.clone()),
     ));
 
-    consumer_tracker.spawn({
-        let service = call_service.clone();
-        let cancellation_token = consumer_cancellation_token.clone();
-        async move {
-            cancellation_token
-                .run_until_cancelled(call::inbound::stale_call_sweeper::run_stale_call_sweeper(
-                    service,
-                    call::inbound::stale_call_sweeper::SWEEP_INTERVAL,
-                ))
-                .await;
-        }
-    });
+    if config::LivekitRoomSweepEnabled::new().is_none_or(|enabled| enabled.as_ref() != "false") {
+        consumer_tracker.spawn({
+            let service = call_service.clone();
+            let cancellation_token = consumer_cancellation_token.clone();
+            async move {
+                cancellation_token
+                    .run_until_cancelled(call::inbound::stale_call_sweeper::run_stale_call_sweeper(
+                        service,
+                        call::inbound::stale_call_sweeper::SWEEP_INTERVAL,
+                    ))
+                    .await;
+            }
+        });
+    } else {
+        tracing::info!("LIVEKIT_ROOM_SWEEP_ENABLED=false: not sweeping LiveKit rooms");
+    }
 
     let call_state = CallRouterState::new(
         call_service.clone(),
