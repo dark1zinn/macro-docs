@@ -1,5 +1,5 @@
 //! `cargo x selfhost-init`: the in-container bootstrap of the self-host
-//! compose stack (`docker-compose.yml` at the repository root).
+//! compose stack (`selfhost/docker-compose.yml`).
 //!
 //! It reuses the local stack's single-source catalogs rather than restating
 //! them: the AWS resources come from [`resources`](super::resources) through
@@ -27,7 +27,7 @@ use serde_json::{Value, json};
 
 use super::{identity, kafka, kickstart, localstack};
 
-/// Keeps `docker-compose.yml` and the gateway in step with the local stack.
+/// Keeps `selfhost/docker-compose.yml` and the gateway in step with the local stack.
 #[cfg(test)]
 mod drift;
 #[cfg(test)]

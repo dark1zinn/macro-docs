@@ -2,10 +2,10 @@
 
 ## What it is
 
-The self-host deployment: `docker-compose.yml` at the repository root runs
-Macro on one Docker host behind a single public gateway, with optional
-features as compose profiles. This directory holds its images, gateway config,
-env template and operator guide.
+The self-host deployment: `docker-compose.yml` in this directory runs Macro on
+one Docker host behind a single public gateway, with optional features as
+compose profiles. This directory is the compose project (its `.env` lives
+here) and holds the images, gateway config, env template and operator guide.
 
 ## How it works
 
@@ -21,11 +21,11 @@ Self-host mode (`MACRO_SELF_HOSTED=true` for services, `VITE_SELF_HOSTED=true`
 in the web build) entitles every account, makes the first account root admin,
 gates new accounts on a DB signup policy and turns off product analytics. The
 backend lives in `crates/selfhost`; the web reads `SELF_HOSTED` from
-`apps/web/src/lib/core/constant/featureFlags.ts`.
+`apps/web/src/lib/core/constant/selfHosted.ts`.
 
 ## Start here
 
-- `../docker-compose.yml`: services, profiles, networks, the shared env.
+- `docker-compose.yml`: services, profiles, networks, the shared env.
 - `gateway/Caddyfile`: every public route.
 - `../tooling/xtask/crates/xtask_local/src/local/selfhost.rs`: secrets, kickstart, provisioning.
 - `../crates/selfhost`: entitlements, root admin, signup policy, admin API rules.
@@ -36,13 +36,13 @@ backend lives in `crates/selfhost`; the web reads `SELF_HOSTED` from
 - New generated secret: a `SECRETS` entry in `selfhost.rs`; never set it in compose.
 - New public route: `gateway/Caddyfile`, mirroring `xtask_local/src/local/proxy.rs`.
 - New service: a compose service (profiled if optional), its build in
-  `../docker-compose.build.yml`, its image in
-  `tooling/xtask/crates/xtask_workflows/src/workflows/selfhost_images.rs`.
+  `docker-compose.build.yml` (contexts are the repository root, `..`), its
+  image in `tooling/xtask/crates/xtask_workflows/src/workflows/selfhost_images.rs`.
 
 ## Checks
 
 - `cargo test -p xtask_local --features selfhost selfhost`
-- `docker compose --env-file selfhost/env.example config --quiet`
+- `docker compose -f selfhost/docker-compose.yml --env-file selfhost/.env.example config --quiet`
 - If a workflow changed: `cargo x workflows --check`
 
 ## Gotchas
