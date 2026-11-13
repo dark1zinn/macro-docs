@@ -159,6 +159,12 @@ state). Stop the stack first, or snapshot the volumes atomically.
 **Upgrade** with `docker compose pull && docker compose up -d`. `init` applies
 new migrations, queues and topics on every start.
 
+**Requests** are logged by the gateway, one JSON line each:
+`docker compose logs -f gateway` shows the path, status and duration of every
+call, including routes whose feature is off (`503`). Query strings, login
+codes, cookies and credentials are redacted and client addresses masked. Set
+`MACRO_GATEWAY_ACCESS_LOG=discard` to turn it off.
+
 ## Building the images
 
 ```sh
