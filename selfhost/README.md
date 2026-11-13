@@ -161,8 +161,8 @@ new migrations, queues and topics on every start.
 
 **Requests** are logged by the gateway, one JSON line each:
 `docker compose logs -f gateway` shows the path, status and duration of every
-call, including routes whose feature is off (`503`). Request headers are not
-logged; query strings and the tokens in join, invite, verification, login-code
+call, including routes whose feature is off (`503`). Request and response
+headers are not logged; query strings and the tokens in join, invite, verification, login-code
 and webhook paths are replaced, and client addresses masked. Other paths,
 document ids and object keys among them, appear as requested. Set
 `MACRO_GATEWAY_ACCESS_LOG=discard` to turn it off.
