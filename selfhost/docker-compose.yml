@@ -476,6 +476,9 @@ services:
       # flag lookups fail fast to their defaults and nothing leaves the host.
       POSTHOG_API_KEY: selfhost-posthog-disabled
       POSTHOG_HOST: http://127.0.0.1:9
+      # No LiveKit server runs in this stack, so calls are unavailable and
+      # the room sweep would only log connection errors every minute.
+      LIVEKIT_ROOM_SWEEP_ENABLED: "false"
     networks:
       edge: { aliases: [document-storage-service] }
       backend: { aliases: [document-storage-service] }
