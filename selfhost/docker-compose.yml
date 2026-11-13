@@ -201,6 +201,10 @@ x-macro-env: &macro-env
   META_ACCESS_TOKEN: ${META_ACCESS_TOKEN:-local-meta-access-token}
   GMAIL_GCP_QUEUE: ${GMAIL_GCP_QUEUE:-gmail-gcp-queue-local}
   APPLE_BUNDLE_ID: com.macro.local
+  # Native app bundle updates: no blocking or revocation rules, the policy the
+  # auth service falls back to anyway. Set explicitly so it doesn't log the
+  # lookup of an unset variable as an error on every start.
+  BUNDLE_UPDATE_POLICY_JSON: '{"rules":[]}'
   SNS_APNS_PLATFORM_ARN: arn:aws:sns:us-east-1:000000000000:app/APNS/macro-local
   SNS_FCM_PLATFORM_ARN: arn:aws:sns:us-east-1:000000000000:app/GCM/macro-local
   # Document and attachment URLs are not CloudFront-signed in this mode.
