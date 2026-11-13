@@ -571,6 +571,8 @@ services:
     environment:
       # A host nothing resolves when SSO is off: Caddy rejects an empty matcher.
       MACRO_AUTH_DOMAIN: ${MACRO_AUTH_DOMAIN:-auth.invalid}
+      # Access log on stdout (redacted); `discard` turns it off.
+      MACRO_GATEWAY_ACCESS_LOG: ${MACRO_GATEWAY_ACCESS_LOG:-stdout}
       # The providers whose key is set in .env (the services' stub defaults
       # don't count), served to the web app at /selfhost/config.json.
       MACRO_AI_PROVIDERS: "${ANTHROPIC_API_KEY:+anthropic,}${OPENAI_API_KEY:+openai,}${GOOGLE_GENERATIVE_AI_API_KEY:+google,}${FIREWORK_API_KEY:+fireworks,}${CEREBRAS_API_KEY:+cerebras,}"
