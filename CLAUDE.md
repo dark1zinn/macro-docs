@@ -27,7 +27,7 @@ patterns in older code.
 | `crates/` | Reusable backend libraries, domain services, and adapters. |
 | `crates/macro_db_client/migrations/` | MacroDB PostgreSQL migrations. |
 | `infra/` | Deployment definitions and local infrastructure. |
-| `selfhost/` | Self-host deployment: the root `docker-compose.yml` stack's images, gateway, and [operator guide](selfhost/README.md). |
+| `selfhost/` | Self-host deployment: its `docker-compose.yml` stack, images, gateway, and [operator guide](selfhost/README.md). |
 | `tooling/` | Development tools, scripts, and imported `just` recipes. |
 | `docs/` | Development guides, architecture, designs, runbooks, and the browser agent guide; see [the index](docs/README.md). |
 

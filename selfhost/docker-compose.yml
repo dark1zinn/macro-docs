@@ -1,6 +1,6 @@
-# Macro, self-hosted. See selfhost/README.md.
+# Macro, self-hosted. See README.md in this directory. From selfhost/:
 #
-#   cp selfhost/env.example .env      # set MACRO_PUBLIC_URL, mail settings
+#   cp .env.example .env      # set MACRO_PUBLIC_URL, mail settings
 #   docker compose pull && docker compose up -d
 #
 # Only `gateway` publishes a port (plus 80/443 for the opt-in `https`

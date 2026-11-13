@@ -13,7 +13,7 @@ fn repo_file(path: &str) -> String {
 
 fn compose() -> serde_yaml::Value {
     let mut compose: serde_yaml::Value =
-        serde_yaml::from_str(&repo_file("docker-compose.yml")).unwrap();
+        serde_yaml::from_str(&repo_file("selfhost/docker-compose.yml")).unwrap();
     // Anchors merge into anchors (`<<: *rust` holds `<<: *app`); each pass
     // resolves one level.
     for _ in 0..4 {
@@ -82,7 +82,7 @@ fn compose_env_covers_the_local_stack_env() {
         .collect();
     assert!(
         missing.is_empty(),
-        "add these local env keys to x-macro-env in docker-compose.yml (or to EXCLUDED): {missing:?}"
+        "add these local env keys to x-macro-env in selfhost/docker-compose.yml (or to EXCLUDED): {missing:?}"
     );
 }
 
