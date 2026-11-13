@@ -71,6 +71,9 @@ maybe_env_vars! {
     pub struct EnableNonUserOwners;
     /// Optional name of the LiveKit agent to dispatch for call transcription.
     pub struct LivekitTranscriptionAgentName;
+    /// `false` stops the periodic sweep of LiveKit rooms, for installs that
+    /// run no LiveKit server (calls are then unavailable). Unset: sweep.
+    pub struct LivekitRoomSweepEnabled;
     /// Shared secret for internal call endpoints (e.g. transcript ingestion from the agent).
     pub struct InternalCallSecret;
     /// Public base URL of this service (e.g. `https://gateway.macro.com/dss`),
