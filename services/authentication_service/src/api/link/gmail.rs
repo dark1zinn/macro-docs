@@ -81,8 +81,8 @@ pub enum InitGmailLinkError {
     /// Internal error
     #[error("internal error occurred")]
     InternalError(#[from] anyhow::Error),
-    /// The identity provider was not found
-    #[error("identity provider not found")]
+    /// No Gmail identity provider is configured on this deployment.
+    #[error("Google sign-in is not configured on this server")]
     IdentityProviderNotFound,
 }
 
@@ -92,7 +92,9 @@ impl IntoResponse for InitGmailLinkError {
         let status_code: StatusCode = match &self {
             InitGmailLinkError::TooManyInProgressLinks => StatusCode::TOO_MANY_REQUESTS,
             InitGmailLinkError::PaymentRequired => StatusCode::PAYMENT_REQUIRED,
-            InitGmailLinkError::InternalError(_) | InitGmailLinkError::IdentityProviderNotFound => {
+            // Not configured is a deployment state, not a failure.
+            InitGmailLinkError::IdentityProviderNotFound => StatusCode::SERVICE_UNAVAILABLE,
+            InitGmailLinkError::InternalError(_) => {
                 tracing::error!(error = ?self, "gmail link initiation failed");
                 StatusCode::INTERNAL_SERVER_ERROR
             }
@@ -186,18 +188,20 @@ pub async fn init_gmail_link_handler(
         .split_ascii_whitespace()
         .map(ToOwned::to_owned)
         .collect();
+    // Look the provider up before creating anything, so an unconfigured
+    // deployment doesn't accumulate pending links toward the limit above.
+    let gmail_idp_id = ctx
+        .auth_client
+        .get_identity_provider_id_by_name(GMAIL_IDENTITY_PROVIDER_NAME)
+        .await
+        .map_err(|_| InitGmailLinkError::IdentityProviderNotFound)?;
+
     let link_id = macro_db_client::in_progress_user_link::create_in_progress_google_link(
         &ctx.db,
         fusion_user_id,
         &requested_google_scopes,
     )
     .await?;
-
-    let gmail_idp_id = ctx
-        .auth_client
-        .get_identity_provider_id_by_name(GMAIL_IDENTITY_PROVIDER_NAME)
-        .await
-        .map_err(|_| InitGmailLinkError::IdentityProviderNotFound)?;
 
     // The state is signed and bound to this user, this link, and the Google
     // callback: the callback refuses anything else, so the authorization URL
