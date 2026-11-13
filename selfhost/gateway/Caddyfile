@@ -30,19 +30,20 @@
 
 	# One JSON line per request: method, path, status and duration, so a
 	# failing or disabled route shows up. Off with MACRO_GATEWAY_ACCESS_LOG=discard.
-	# Secrets never reach it: query strings (presigned signatures, tokens) and
-	# login codes in paths are replaced, cookies and Authorization headers
-	# dropped, and client addresses masked to their network.
+	# Secrets never reach it: request headers are dropped (cookies, API and
+	# internal keys, Referer, X-Forwarded-For), query strings (presigned
+	# signatures, tokens) and the token segment of join, invite, verification,
+	# login-code and webhook paths are replaced, Set-Cookie is dropped and
+	# client addresses are masked to their network.
 	log {
 		output {$MACRO_GATEWAY_ACCESS_LOG:stdout}
 		format filter {
 			wrap json
 			request>uri multi_regexp {
-				regexp "/oauth/passwordless/[^/?]+" "/oauth/passwordless/REDACTED"
+				regexp "/(passwordless|verify|join|invite|public|webhooks|opens|harness-pairings)/[^/?]+" "/${1}/REDACTED"
 				regexp "\?.*$" "?REDACTED"
 			}
-			request>headers>Cookie delete
-			request>headers>Authorization delete
+			request>headers delete
 			resp_headers>Set-Cookie delete
 			request>remote_ip ip_mask {
 				ipv4 24
