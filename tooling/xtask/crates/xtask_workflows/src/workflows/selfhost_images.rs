@@ -1,5 +1,5 @@
 //! `Self-host images` — builds the images the self-host compose stack pulls
-//! (`docker-compose.yml`, built from the sources `docker-compose.build.yml`
+//! (`selfhost/docker-compose.yml`, built from the sources `docker-compose.build.yml`
 //! names) and pushes them to the repository owner's GitHub Container
 //! Registry. Runs on pushes to `main`; any other branch publishes only when
 //! dispatched by hand, under its own (sanitized) branch-name tag, so it never

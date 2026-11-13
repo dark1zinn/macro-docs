@@ -19,12 +19,18 @@ application in Coolify and similar platforms.
 
 ## Quick start
 
+Everything runs from this directory, `selfhost/`, where `docker-compose.yml`
+and its `.env` live:
+
 ```sh
-cp selfhost/env.example .env
-# Edit .env: MACRO_PUBLIC_URL, MACRO_MAIL_DOMAIN and the SMTP relay.
+cd selfhost
+cp .env.example .env
+# Edit .env: the Required section at the top (public URL, mail domain, SMTP).
 docker compose pull
 docker compose up -d
 ```
+
+The `docker compose` commands below assume you are in `selfhost/`.
 
 Open `MACRO_PUBLIC_URL` and sign in with your email. The login code arrives
 through your SMTP relay; there are no passwords.
@@ -93,12 +99,12 @@ When a feature is off, its API routes answer `503`.
 ## Coolify
 
 1. Create a resource from this Git repository with the **Docker Compose**
-   build pack. Set **Base Directory** to `/` and **Docker Compose Location**
-   to `/docker-compose.yml`.
-2. Under **Environment Variables**, set `MACRO_PUBLIC_URL`,
-   `MACRO_MAIL_DOMAIN`, `SMTP_RELAY_HOST` and the rest of what you need from
-   `selfhost/env.example`. Coolify asks for the required ones before
-   deploying.
+   build pack. Set **Base Directory** to `/selfhost` and **Docker Compose
+   Location** to `/docker-compose.yml`.
+2. Under **Environment Variables**, set the **Required** section of
+   `.env.example` (`MACRO_PUBLIC_URL`, `MACRO_MAIL_DOMAIN` and the SMTP relay),
+   plus whatever else you need from it. Coolify asks for the required ones
+   before deploying.
 3. Set `MACRO_HTTP_BIND=127.0.0.1` so the gateway port is not exposed
    directly. Then assign your domain to the **gateway** service on port
    **80**, for example `https://macro.example.com:80`.
