@@ -28,6 +28,35 @@
 		-Server
 	}
 
+	# One JSON line per request: method, path, status and duration, so a
+	# failing or disabled route shows up. Off with MACRO_GATEWAY_ACCESS_LOG=discard.
+	# Secrets never reach it: query strings (presigned signatures, tokens) and
+	# login codes in paths are replaced, cookies and Authorization headers
+	# dropped, and client addresses masked to their network.
+	log {
+		output {$MACRO_GATEWAY_ACCESS_LOG:stdout}
+		format filter {
+			wrap json
+			request>uri multi_regexp {
+				regexp "/oauth/passwordless/[^/?]+" "/oauth/passwordless/REDACTED"
+				regexp "\?.*$" "?REDACTED"
+			}
+			request>headers>Cookie delete
+			request>headers>Authorization delete
+			resp_headers>Set-Cookie delete
+			request>remote_ip ip_mask {
+				ipv4 24
+				ipv6 48
+			}
+			request>client_ip ip_mask {
+				ipv4 24
+				ipv6 48
+			}
+		}
+	}
+	@healthcheck path /_healthz
+	log_skip @healthcheck
+
 	route {
 		# FusionAuth's hosted OAuth pages, for Google/GitHub sign-in (the `sso`
 		# profile). Only on its own hostname: FusionAuth builds absolute URLs
