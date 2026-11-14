@@ -76,12 +76,13 @@
 			respond "ok" 200
 		}
 
-		# Runtime facts the prebuilt web app can't know: the AI providers with
-		# a key set (comma-separated), so model pickers offer only those.
+		# Runtime facts the prebuilt web app can't know, comma-separated: the AI
+		# providers with a key set, so model pickers offer only those, and the
+		# integrations with credentials set, so only those can be connected.
 		handle /selfhost/config.json {
 			header Content-Type application/json
 			header Cache-Control no-store
-			respond `{"ai_providers":"{$MACRO_AI_PROVIDERS}"}` 200
+			respond `{"ai_providers":"{$MACRO_AI_PROVIDERS}","integrations":"{$MACRO_INTEGRATIONS}"}` 200
 		}
 
 		# --- Rust services (the local inventory's path prefixes) -----------

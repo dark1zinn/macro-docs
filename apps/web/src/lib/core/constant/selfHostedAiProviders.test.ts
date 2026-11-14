@@ -137,3 +137,74 @@ describe('self-hosted AI provider availability', () => {
     expect(isModelAvailable('openai/gpt-6-astra')).toBe(true);
   });
 });
+
+describe('self-hosted integration availability', () => {
+  beforeEach(() => {
+    env.selfHosted = true;
+    vi.restoreAllMocks();
+  });
+
+  it('treats every integration as available before the config loads', async () => {
+    const { isIntegrationAvailable } = await freshModule();
+    expect(isIntegrationAvailable('github')).toBe(true);
+  });
+
+  it('filters integrations once the config loads', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      configResponse({ ai_providers: '', integrations: 'github,google,' })
+    );
+    const { loadSelfHostedAiProviders, isIntegrationAvailable } =
+      await freshModule();
+
+    await loadSelfHostedAiProviders();
+
+    expect(isIntegrationAvailable('github')).toBe(true);
+    expect(isIntegrationAvailable('google')).toBe(true);
+    expect(isIntegrationAvailable('pipedream')).toBe(false);
+    expect(isIntegrationAvailable('slack')).toBe(false);
+  });
+
+  it('treats an empty integrations list as none configured', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      configResponse({ ai_providers: '', integrations: '' })
+    );
+    const { loadSelfHostedAiProviders, isIntegrationAvailable } =
+      await freshModule();
+
+    await loadSelfHostedAiProviders();
+
+    expect(isIntegrationAvailable('github')).toBe(false);
+  });
+
+  it('leaves integrations available when the response omits the field', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      configResponse({ ai_providers: 'anthropic,' })
+    );
+    const { loadSelfHostedAiProviders, isIntegrationAvailable } =
+      await freshModule();
+
+    await loadSelfHostedAiProviders();
+
+    expect(isIntegrationAvailable('pipedream')).toBe(true);
+  });
+
+  it('keeps every integration available when the fetch fails', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('offline'));
+    const { loadSelfHostedAiProviders, isIntegrationAvailable } =
+      await freshModule();
+
+    await loadSelfHostedAiProviders();
+
+    expect(isIntegrationAvailable('slack')).toBe(true);
+  });
+
+  it('never filters integrations outside a self-hosted build', async () => {
+    env.selfHosted = false;
+    const { loadSelfHostedAiProviders, isIntegrationAvailable } =
+      await freshModule();
+
+    await loadSelfHostedAiProviders();
+
+    expect(isIntegrationAvailable('pipedream')).toBe(true);
+  });
+});
