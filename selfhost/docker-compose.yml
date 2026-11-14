@@ -198,8 +198,6 @@ x-macro-env: &macro-env
   GITHUB_SYNC_APP_PEM_SECRET_KEY: ${GITHUB_SYNC_APP_PEM_SECRET_KEY:-local-github-sync-pem}
   OPENAI_DOMAIN_VERIFICATION_TOKEN: ${OPENAI_DOMAIN_VERIFICATION_TOKEN:-local-openai-domain-verification-token}
   CAL_EVENT_TYPE_CONTENT_NAMES_KEY: '{"1":{"content_name":"local","value":0}}'
-  META_PIXEL_ID: ${META_PIXEL_ID:-local-meta-pixel}
-  META_ACCESS_TOKEN: ${META_ACCESS_TOKEN:-local-meta-access-token}
   GMAIL_GCP_QUEUE: ${GMAIL_GCP_QUEUE:-gmail-gcp-queue-local}
   APPLE_BUNDLE_ID: com.macro.local
   # Native app bundle updates: no blocking or revocation rules, the policy the
@@ -477,6 +475,11 @@ services:
       # flag lookups fail fast to their defaults and nothing leaves the host.
       POSTHOG_API_KEY: selfhost-posthog-disabled
       POSTHOG_HOST: http://127.0.0.1:9
+      # Also required by its config, and only used for Cal.com booking
+      # webhooks, which must be signed with the generated secret. Never in
+      # the shared env: the auth service would send signup events to Meta.
+      META_PIXEL_ID: selfhost-meta-disabled
+      META_ACCESS_TOKEN: selfhost-meta-disabled
       # Calls need the `calls` profile (a LiveKit server); without it the
       # room sweep would only log connection errors every minute.
       LIVEKIT_ROOM_SWEEP_ENABLED: ${MACRO_CALLS_ENABLED:-false}
