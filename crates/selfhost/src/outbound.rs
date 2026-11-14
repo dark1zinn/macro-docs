@@ -2,4 +2,5 @@
 
 pub mod fusionauth;
 pub mod pg;
+pub mod pg_audit;
 pub mod roles;
