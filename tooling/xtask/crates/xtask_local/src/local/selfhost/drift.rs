@@ -42,13 +42,16 @@ fn secret_names(group: &str) -> Vec<&'static str> {
 
 /// Keys of the local env the self-host stack deliberately does not set: the
 /// local orchestrator's own bookkeeping, the host-Docker sandbox provider, and
-/// product analytics (only document_storage_service needs a PostHog key, set
-/// on that service alone).
+/// product analytics. document_storage_service requires a PostHog key and a
+/// Meta pixel, so those are set on that service alone; in the shared env they
+/// would switch on the auth service's analytics.
 const EXCLUDED: &[&str] = &[
     "COMPOSE_PROJECT_NAME",
     "FRONTEND_PORT",
     "LOCAL_CONTAINER_IMAGE",
     "LOCAL_CONTAINER_NETWORK",
+    "META_ACCESS_TOKEN",
+    "META_PIXEL_ID",
     "POSTHOG_API_KEY",
 ];
 
