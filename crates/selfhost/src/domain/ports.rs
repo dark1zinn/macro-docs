@@ -5,7 +5,9 @@ use std::collections::HashSet;
 use async_trait::async_trait;
 use roles_and_permissions::domain::model::RoleId;
 
-use super::model::{AllowedEmail, SignupPolicy, UserRecord};
+use super::model::{
+    AllowedEmail, AuditEntry, AuditQuery, AuditStatus, NewAuditEntry, SignupPolicy, UserRecord,
+};
 
 /// Persistence for self-host state.
 #[async_trait]
@@ -73,4 +75,17 @@ pub trait RolesPort: Send + Sync + 'static {
 pub trait AccountPort: Send + Sync + 'static {
     /// Activates or deactivates an account. A deactivated account cannot sign in.
     async fn set_active(&self, user_id: &str, active: bool) -> anyhow::Result<()>;
+}
+
+/// Append-only record of administrative actions.
+#[async_trait]
+pub trait AuditLog: Send + Sync + 'static {
+    /// Records `entry` as pending and returns its id.
+    async fn begin(&self, entry: &NewAuditEntry) -> anyhow::Result<i64>;
+
+    /// Settles a pending entry with its outcome. A settled entry never changes again.
+    async fn finish(&self, id: i64, status: &AuditStatus) -> anyhow::Result<()>;
+
+    /// Lists entries newest first. `query.limit` is already clamped.
+    async fn list(&self, query: &AuditQuery) -> anyhow::Result<Vec<AuditEntry>>;
 }

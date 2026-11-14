@@ -67,6 +67,112 @@ pub struct AllowedEmail {
     pub created_at: DateTime<Utc>,
 }
 
+/// An administrative action recorded in the audit log.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuditAction {
+    /// The first account became root admin (taken by the system).
+    RootClaimed,
+    /// An account was made admin.
+    AdminGranted,
+    /// An account stopped being admin.
+    AdminRevoked,
+    /// An account was disabled.
+    UserDisabled,
+    /// A disabled account was enabled again.
+    UserEnabled,
+    /// The signup policy changed.
+    SignupPolicyChanged,
+    /// An email was allowed to sign up.
+    AllowedEmailAdded,
+    /// An email was removed from the signup allowlist.
+    AllowedEmailRemoved,
+}
+
+impl AuditAction {
+    /// Every action, in the order the admin panel lists them.
+    pub const ALL: [Self; 8] = [
+        Self::RootClaimed,
+        Self::AdminGranted,
+        Self::AdminRevoked,
+        Self::UserDisabled,
+        Self::UserEnabled,
+        Self::SignupPolicyChanged,
+        Self::AllowedEmailAdded,
+        Self::AllowedEmailRemoved,
+    ];
+
+    /// The stored and API string form.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::RootClaimed => "root_claimed",
+            Self::AdminGranted => "admin_granted",
+            Self::AdminRevoked => "admin_revoked",
+            Self::UserDisabled => "user_disabled",
+            Self::UserEnabled => "user_enabled",
+            Self::SignupPolicyChanged => "signup_policy_changed",
+            Self::AllowedEmailAdded => "allowed_email_added",
+            Self::AllowedEmailRemoved => "allowed_email_removed",
+        }
+    }
+
+    /// Parses the stored or API string form.
+    pub fn parse(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|action| action.as_str() == s)
+    }
+}
+
+/// Where an audited action stands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuditStatus {
+    /// Recorded before running; still pending when the outcome could not be stored.
+    Pending,
+    /// The action took effect.
+    Succeeded,
+    /// The action was refused or failed, with the reason.
+    Failed(String),
+}
+
+/// An action about to run, as recorded before it runs.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NewAuditEntry {
+    /// Macro user id of the admin; `None` for the system.
+    pub actor: Option<String>,
+    /// What is being done.
+    pub action: AuditAction,
+    /// What it applies to: a profile id or an email.
+    pub target: Option<String>,
+    /// Action-specific values, such as the new policy.
+    pub details: serde_json::Value,
+}
+
+/// A recorded action.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AuditEntry {
+    /// Increasing id; also the paging cursor.
+    pub id: i64,
+    /// When the action was recorded.
+    pub created_at: DateTime<Utc>,
+    /// The recorded action.
+    pub entry: NewAuditEntry,
+    /// Its outcome.
+    pub status: AuditStatus,
+    /// When the outcome was recorded.
+    pub completed_at: Option<DateTime<Utc>>,
+}
+
+/// Which audit entries to list, newest first.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AuditQuery {
+    /// Only this action.
+    pub action: Option<AuditAction>,
+    /// Only entries whose actor or target contains this text, case-insensitively.
+    pub search: Option<String>,
+    /// Only entries older than this id (the previous page's last id).
+    pub before: Option<i64>,
+    /// Page size; the service clamps it.
+    pub limit: Option<i64>,
+}
+
 /// Errors from self-host operations. Each variant maps to one HTTP status.
 #[derive(Debug, thiserror::Error)]
 pub enum SelfHostError {
