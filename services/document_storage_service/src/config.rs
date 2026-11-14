@@ -74,6 +74,10 @@ maybe_env_vars! {
     /// `false` stops the periodic sweep of LiveKit rooms, for installs that
     /// run no LiveKit server (calls are then unavailable). Unset: sweep.
     pub struct LivekitRoomSweepEnabled;
+    /// The LiveKit URL handed to clients when it differs from the one this
+    /// service calls (e.g. a public route in front of an internal server).
+    /// Unset: clients get `LIVEKIT_SERVER_URL`.
+    pub struct LivekitPublicUrl;
     /// Shared secret for internal call endpoints (e.g. transcript ingestion from the agent).
     pub struct InternalCallSecret;
     /// Public base URL of this service (e.g. `https://gateway.macro.com/dss`),

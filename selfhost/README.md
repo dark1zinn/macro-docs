@@ -94,6 +94,7 @@ Enable profiles with `COMPOSE_PROFILES` in `.env`, comma-separated, or with
 |`sso`|Google and GitHub sign-in|`MACRO_AUTH_DOMAIN` and `MACRO_AUTH_PUBLIC_URL`, plus the OAuth clients|
 |`whatsapp`|WhatsApp linked devices||
 |`slack`|Slack import worker||
+|`calls`|Audio and video calls (LiveKit). Signalling goes through the gateway at `/livekit`; media uses TCP 7881 and UDP 7882 on the host, which users must reach|`MACRO_CALLS_ENABLED=true`. LiveKit discovers the host's public IP; on a LAN or localhost set `MACRO_LIVEKIT_NODE_IP` and `MACRO_LIVEKIT_USE_EXTERNAL_IP=false`|
 |`https`|Automatic TLS on 80/443|`MACRO_DOMAIN`; don't use it under Coolify|
 |`mailcatcher`|Mailpit: keeps every outgoing mail in a local inbox at `http://127.0.0.1:8025` instead of delivering it|`SMTP_RELAY_HOST=mailpit`, `SMTP_RELAY_PORT=1025`, `SMTP_RELAY_TLS_LEVEL=may`. For trying the stack only; the relay still refuses recipients whose domain has no mail server|
 |`observability`|Grafana with Tempo, Loki and Prometheus (`grafana/otel-lgtm`) at `http://127.0.0.1:3001`, no login|`MACRO_OTEL_GRPC_ENDPOINT=http://otel-lgtm:4317`, `MACRO_OTEL_HTTP_ENDPOINT=http://otel-lgtm:4318`. Without them nothing is exported|

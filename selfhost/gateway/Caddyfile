@@ -130,6 +130,12 @@
 			uri strip_prefix /websocket
 			reverse_proxy websocket_service:6969
 		}
+		# Call signalling (the `calls` profile); media uses LiveKit's own ports.
+		@livekit path /livekit /livekit/*
+		handle @livekit {
+			uri strip_prefix /livekit
+			reverse_proxy livekit:7880
+		}
 		@sync path /sync /sync/*
 		handle @sync {
 			uri strip_prefix /sync

@@ -833,7 +833,10 @@ async fn run_server() -> anyhow::Result<()> {
         (*entity_access_service).clone(),
         (*notification_ingress_service).clone(),
         recording_storage,
-        config.livekit_server_url.as_ref(),
+        config::LivekitPublicUrl::new().map_or_else(
+            || config.livekit_server_url.as_ref().to_owned(),
+            |url| url.as_ref().to_owned(),
+        ),
     )
     .with_summarizer(AiCallSummarizer::new(
         ai_usage::pg_recorder_with_enforcement(db.clone(), config.enable_ai_usage_enforcement),
