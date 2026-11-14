@@ -687,6 +687,21 @@ fn kickstart_env(name: &str) -> Option<String> {
         .and_then(|known| macro_env_var::maybe_read_env(known))
 }
 
+/// The self-host migration first shipped as 20261110150956, a version upstream
+/// later used for its own migration. Installs that applied ours under that
+/// number would fail the checksum check against upstream's file, so the record
+/// is dropped, only when it is ours; the renumbered migration then re-applies
+/// idempotently and upstream's runs normally.
+const FORGET_RENUMBERED_MIGRATION: &str = "
+DO $$
+BEGIN
+    IF to_regclass('public._sqlx_migrations') IS NOT NULL THEN
+        DELETE FROM _sqlx_migrations
+        WHERE version = 20261110150956 AND description = 'selfhost admin';
+    END IF;
+END $$;
+";
+
 fn provision() -> Result<()> {
     let database_url = env("DATABASE_URL")?;
     let aws_url = env("LOCAL_AWS_URL")?;
@@ -702,6 +717,8 @@ fn provision() -> Result<()> {
         rt.block_on(sqlx::PgPool::connect(&database_url))
             .context("connecting")
     })?;
+    rt.block_on(sqlx::raw_sql(FORGET_RENUMBERED_MIGRATION).execute(&pool))
+        .context("forgetting the renumbered self-host migration")?;
     rt.block_on(macro_db_migrator::MACRO_DB_MIGRATIONS.run(&pool))
         .context("migrating MacroDB")?;
     rt.block_on(pool.close());
