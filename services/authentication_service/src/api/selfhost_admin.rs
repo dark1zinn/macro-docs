@@ -6,14 +6,16 @@ use crate::api::context::{ApiContext, AuthorizationService};
 use crate::api::signup_policy::signup_forbidden_response;
 use axum::{
     Json, Router,
-    extract::State,
-    http::StatusCode,
+    extract::{Query, State},
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, post, put},
 };
 use chrono::{DateTime, Utc};
 use macro_authorization::{MacroAuthorizationExtractor, UserOnly};
-use selfhost::domain::model::{SelfHostError, SignupPolicy, UserEntry};
+use selfhost::domain::model::{
+    AuditAction, AuditEntry, AuditQuery, AuditStatus, SelfHostError, SignupPolicy, UserEntry,
+};
 use serde::{Deserialize, Serialize};
 
 type User = MacroAuthorizationExtractor<AuthorizationService, UserOnly>;
@@ -83,6 +85,74 @@ struct PolicyBody {
 #[derive(Deserialize)]
 struct EmailBody {
     email: String,
+}
+
+#[derive(Deserialize)]
+struct AuditParams {
+    action: Option<String>,
+    search: Option<String>,
+    before: Option<i64>,
+    limit: Option<i64>,
+}
+
+impl AuditParams {
+    fn into_query(self) -> Result<AuditQuery, SelfHostError> {
+        let action =
+            match self.action.as_deref().filter(|a| !a.is_empty()) {
+                None => None,
+                Some(raw) => Some(AuditAction::parse(raw).ok_or_else(|| {
+                    SelfHostError::Invalid(format!("unknown audit action {raw:?}"))
+                })?),
+            };
+        Ok(AuditQuery {
+            action,
+            search: self.search,
+            before: self.before,
+            limit: self.limit,
+        })
+    }
+}
+
+#[derive(Serialize)]
+struct AuditItem {
+    id: i64,
+    created_at: DateTime<Utc>,
+    /// Macro user id of the admin; absent for system actions.
+    actor: Option<String>,
+    action: &'static str,
+    target: Option<String>,
+    details: serde_json::Value,
+    status: &'static str,
+    error: Option<String>,
+    completed_at: Option<DateTime<Utc>>,
+}
+
+impl From<AuditEntry> for AuditItem {
+    fn from(entry: AuditEntry) -> Self {
+        let (status, error) = match entry.status {
+            AuditStatus::Pending => ("pending", None),
+            AuditStatus::Succeeded => ("succeeded", None),
+            AuditStatus::Failed(error) => ("failed", Some(error)),
+        };
+        Self {
+            id: entry.id,
+            created_at: entry.created_at,
+            actor: entry.entry.actor,
+            action: entry.entry.action.as_str(),
+            target: entry.entry.target,
+            details: entry.entry.details,
+            status,
+            error,
+            completed_at: entry.completed_at,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct AuditResponse {
+    entries: Vec<AuditItem>,
+    /// Cursor for the next (older) page; absent once a page comes back empty.
+    next_before: Option<i64>,
 }
 
 fn error_response(error: SelfHostError) -> Response {
@@ -231,6 +301,73 @@ pub(crate) fn router_if_enabled(state: &ApiContext) -> Router<ApiContext> {
             "/selfhost/admin/signups/allowed_emails/remove",
             post(remove_allowed_email),
         )
+        .route("/selfhost/admin/audit", get(list_audit))
+        .route("/selfhost/admin/audit/export", get(export_audit))
+}
+
+async fn list_audit(
+    State(ctx): State<ApiContext>,
+    user: User,
+    Query(params): Query<AuditParams>,
+) -> Result<Json<AuditResponse>, Response> {
+    let svc = ctx.selfhost.clone().ok_or_else(disabled_response)?;
+    let entries = svc
+        .list_audit(
+            user.authorization.macro_user_id.as_ref(),
+            params.into_query().map_err(error_response)?,
+        )
+        .await
+        .map_err(error_response)?;
+    Ok(Json(AuditResponse {
+        next_before: entries.last().map(|entry| entry.id),
+        entries: entries.into_iter().map(AuditItem::from).collect(),
+    }))
+}
+
+/// Every entry matching the filters, newest first, as a CSV download.
+async fn export_audit(
+    State(ctx): State<ApiContext>,
+    user: User,
+    Query(params): Query<AuditParams>,
+) -> Result<Response, Response> {
+    const PAGE: i64 = 200;
+    let svc = ctx.selfhost.clone().ok_or_else(disabled_response)?;
+    let caller = user.authorization.macro_user_id.as_ref();
+    let filter = params.into_query().map_err(error_response)?;
+    let mut entries = Vec::new();
+    loop {
+        let page = svc
+            .list_audit(
+                caller,
+                AuditQuery {
+                    before: entries.last().map(|entry: &AuditEntry| entry.id),
+                    limit: Some(PAGE),
+                    ..filter.clone()
+                },
+            )
+            .await
+            .map_err(error_response)?;
+        let done = i64::try_from(page.len()).unwrap_or(PAGE) < PAGE;
+        entries.extend(page);
+        if done {
+            break;
+        }
+    }
+    let csv = selfhost::export::audit_csv(&entries)
+        .map_err(|error| error_response(SelfHostError::Internal(error)))?;
+    // Bytes, not text/csv: the web client's fetch helper returns raw bodies only
+    // for octet-stream, and the panel saves them as a CSV file.
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/octet-stream"),
+            (
+                header::CONTENT_DISPOSITION,
+                "attachment; filename=\"selfhost-audit-log.csv\"",
+            ),
+        ],
+        csv,
+    )
+        .into_response())
 }
 
 /// Returns a denial response when self-host mode is on and the email may not

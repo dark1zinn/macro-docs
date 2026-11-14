@@ -7,8 +7,11 @@ use async_trait::async_trait;
 use chrono::Utc;
 use roles_and_permissions::domain::model::RoleId;
 
-use super::model::{AllowedEmail, SelfHostError, SignupPolicy, UserRecord};
-use super::ports::{AccountPort, RolesPort, SelfHostRepo};
+use super::model::{
+    AllowedEmail, AuditAction, AuditEntry, AuditQuery, AuditStatus, NewAuditEntry, SelfHostError,
+    SignupPolicy, UserRecord,
+};
+use super::ports::{AccountPort, AuditLog, RolesPort, SelfHostRepo};
 use super::service::SelfHostService;
 
 #[derive(Default)]
@@ -28,6 +31,12 @@ struct State {
     refuse_admin_ops: bool,
     /// When set, identity provider activation fails.
     fail_set_active: bool,
+    /// Audit entries in recording order, with their current outcome.
+    audit: Vec<(NewAuditEntry, AuditStatus)>,
+    /// When set, recording an audit entry fails.
+    fail_audit: bool,
+    /// The last query the audit log was listed with.
+    last_audit_query: Option<AuditQuery>,
 }
 
 #[derive(Clone, Default)]
@@ -91,6 +100,28 @@ impl Fake {
 
     fn fail_set_active(&self) {
         self.0.lock().unwrap().fail_set_active = true;
+    }
+
+    fn fail_audit(&self) {
+        self.0.lock().unwrap().fail_audit = true;
+    }
+
+    /// Recorded audit entries as (actor, action, target, outcome).
+    fn audit(&self) -> Vec<(Option<String>, AuditAction, Option<String>, AuditStatus)> {
+        self.0
+            .lock()
+            .unwrap()
+            .audit
+            .iter()
+            .map(|(entry, status)| {
+                (
+                    entry.actor.clone(),
+                    entry.action,
+                    entry.target.clone(),
+                    status.clone(),
+                )
+            })
+            .collect()
     }
 
     fn is_active(&self, fusionauth_id: &str) -> Option<bool> {
@@ -300,8 +331,37 @@ impl AccountPort for Fake {
     }
 }
 
-fn service(f: &Fake) -> SelfHostService<Fake, Fake, Fake> {
-    SelfHostService::new(f.clone(), f.clone(), f.clone())
+#[async_trait]
+impl AuditLog for Fake {
+    async fn begin(&self, entry: &NewAuditEntry) -> anyhow::Result<i64> {
+        let mut state = self.0.lock().unwrap();
+        if state.fail_audit {
+            anyhow::bail!("audit log unavailable");
+        }
+        state.audit.push((entry.clone(), AuditStatus::Pending));
+        Ok(i64::try_from(state.audit.len())? - 1)
+    }
+
+    async fn finish(&self, id: i64, status: &AuditStatus) -> anyhow::Result<()> {
+        let mut state = self.0.lock().unwrap();
+        let (_, current) = &mut state.audit[usize::try_from(id)?];
+        anyhow::ensure!(
+            *current == AuditStatus::Pending,
+            "entry {id} already settled"
+        );
+        *current = status.clone();
+        Ok(())
+    }
+
+    async fn list(&self, query: &AuditQuery) -> anyhow::Result<Vec<AuditEntry>> {
+        let mut state = self.0.lock().unwrap();
+        state.last_audit_query = Some(query.clone());
+        Ok(Vec::new())
+    }
+}
+
+fn service(f: &Fake) -> SelfHostService<Fake, Fake, Fake, Fake> {
+    SelfHostService::new(f.clone(), f.clone(), f.clone(), f.clone())
 }
 
 #[tokio::test]
@@ -562,4 +622,165 @@ async fn malformed_signup_email_is_rejected_as_invalid() {
         .unwrap_err();
 
     assert!(matches!(err, SelfHostError::Invalid(_)));
+}
+
+const ROOT: &str = "macro|root@example.com";
+const SECOND: &str = "macro|second@example.com";
+
+fn two_users_with_root() -> Fake {
+    let f = Fake::with_users(&[("fa-1", "root@example.com"), ("fa-2", "second@example.com")]);
+    f.grant("root@example.com", RoleId::SuperAdmin);
+    f
+}
+
+#[tokio::test]
+async fn every_admin_action_is_recorded_with_its_actor_target_and_outcome() {
+    let f = two_users_with_root();
+    let svc = service(&f);
+
+    svc.set_admin(ROOT, SECOND, true).await.unwrap();
+    svc.set_admin(ROOT, SECOND, false).await.unwrap();
+    svc.set_disabled(ROOT, SECOND, true).await.unwrap();
+    svc.set_disabled(ROOT, SECOND, false).await.unwrap();
+    svc.set_policy(ROOT, SignupPolicy::Open).await.unwrap();
+    svc.add_allowed_email(ROOT, " New@Example.com ")
+        .await
+        .unwrap();
+    svc.remove_allowed_email(ROOT, "new@example.com")
+        .await
+        .unwrap();
+
+    let ok = |action, target: Option<&str>| {
+        (
+            Some(ROOT.to_owned()),
+            action,
+            target.map(str::to_owned),
+            AuditStatus::Succeeded,
+        )
+    };
+    assert_eq!(
+        f.audit(),
+        [
+            ok(AuditAction::AdminGranted, Some(SECOND)),
+            ok(AuditAction::AdminRevoked, Some(SECOND)),
+            ok(AuditAction::UserDisabled, Some(SECOND)),
+            ok(AuditAction::UserEnabled, Some(SECOND)),
+            ok(AuditAction::SignupPolicyChanged, None),
+            ok(AuditAction::AllowedEmailAdded, Some("new@example.com")),
+            ok(AuditAction::AllowedEmailRemoved, Some("new@example.com")),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn the_root_claim_is_recorded_as_a_system_action_once() {
+    let f = Fake::with_users(&[("fa-1", "root@example.com"), ("fa-2", "second@example.com")]);
+    let svc = service(&f);
+
+    svc.on_user_created("root@example.com").await.unwrap();
+    svc.on_user_created("second@example.com").await.unwrap();
+
+    assert_eq!(
+        f.audit(),
+        [(
+            None,
+            AuditAction::RootClaimed,
+            Some(ROOT.to_owned()),
+            AuditStatus::Succeeded
+        )]
+    );
+}
+
+#[tokio::test]
+async fn a_refused_action_is_recorded_as_failed_with_the_reason() {
+    let f = two_users_with_root();
+    let svc = service(&f);
+
+    svc.set_disabled(ROOT, ROOT, true).await.unwrap_err();
+    svc.set_admin(ROOT, ROOT, false).await.unwrap_err();
+
+    let outcomes: Vec<_> = f.audit().into_iter().map(|(_, a, _, s)| (a, s)).collect();
+    assert_eq!(
+        outcomes,
+        [
+            (
+                AuditAction::UserDisabled,
+                AuditStatus::Failed("cannot disable your own account".into())
+            ),
+            (
+                AuditAction::AdminRevoked,
+                AuditStatus::Failed("cannot demote the last active admin".into())
+            ),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn an_identity_failure_is_recorded_as_failed() {
+    let f = two_users_with_root();
+    f.fail_set_active();
+    let svc = service(&f);
+
+    svc.set_disabled(ROOT, SECOND, true).await.unwrap_err();
+
+    assert!(matches!(
+        f.audit().as_slice(),
+        [(_, AuditAction::UserDisabled, _, AuditStatus::Failed(_))]
+    ));
+}
+
+#[tokio::test]
+async fn no_ops_invalid_input_and_non_admin_calls_record_nothing() {
+    let f = two_users_with_root();
+    let svc = service(&f);
+
+    svc.set_admin(ROOT, ROOT, true).await.unwrap();
+    svc.set_disabled(ROOT, SECOND, false).await.unwrap();
+    svc.set_policy(ROOT, SignupPolicy::InviteOnly)
+        .await
+        .unwrap();
+    svc.add_allowed_email(ROOT, "not an email")
+        .await
+        .unwrap_err();
+    svc.set_admin(SECOND, SECOND, true).await.unwrap_err();
+
+    assert!(f.audit().is_empty());
+}
+
+#[tokio::test]
+async fn an_action_does_not_run_when_its_entry_cannot_be_recorded() {
+    let f = two_users_with_root();
+    f.fail_audit();
+    let svc = service(&f);
+
+    let err = svc.set_admin(ROOT, SECOND, true).await.unwrap_err();
+
+    assert!(matches!(err, SelfHostError::Internal(_)));
+    assert!(!f.has_role("second@example.com", RoleId::SuperAdmin));
+}
+
+#[tokio::test]
+async fn the_audit_listing_needs_an_admin_and_caps_the_page_size() {
+    let f = two_users_with_root();
+    let svc = service(&f);
+
+    let err = svc
+        .list_audit(SECOND, AuditQuery::default())
+        .await
+        .unwrap_err();
+    assert!(matches!(err, SelfHostError::Forbidden));
+
+    svc.list_audit(
+        ROOT,
+        AuditQuery {
+            search: Some("   ".into()),
+            limit: Some(10_000),
+            ..AuditQuery::default()
+        },
+    )
+    .await
+    .unwrap();
+    let query = f.0.lock().unwrap().last_audit_query.clone().unwrap();
+    assert_eq!(query.limit, Some(200));
+    assert_eq!(query.search, None, "blank search means no filter");
 }
