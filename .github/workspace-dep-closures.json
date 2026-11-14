@@ -14568,7 +14568,9 @@
     "selfhost": [
       "crates/cowlike",
       "crates/fusionauth",
+      "crates/macro_env",
       "crates/macro_env_var",
+      "crates/macro_service_urls",
       "crates/macro_user_id",
       "crates/non_empty",
       "crates/roles_and_permissions",
