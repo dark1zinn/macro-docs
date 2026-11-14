@@ -9,6 +9,7 @@ use sqlx::PgPool;
 
 use crate::domain::service::SelfHostService;
 use crate::outbound::pg::PgSelfHostRepo;
+use crate::outbound::pg_audit::PgAuditLog;
 use crate::outbound::roles::RolesAdapter;
 
 maybe_env_vars! {
@@ -17,18 +18,24 @@ maybe_env_vars! {
 }
 
 /// The fully wired self-host service for a given roles service `S`.
-pub type SelfHost<S> = SelfHostService<PgSelfHostRepo, RolesAdapter<S>, Arc<FusionAuthClient>>;
+pub type SelfHost<S> =
+    SelfHostService<PgSelfHostRepo, RolesAdapter<S>, Arc<FusionAuthClient>, PgAuditLog>;
 
 /// Whether self-host mode is enabled for this process.
 pub fn enabled() -> bool {
     MacroSelfHosted::new().is_some_and(|v| v.as_ref() == "true")
 }
 
-/// Wires the Postgres repository, the roles service, and FusionAuth.
+/// Wires the Postgres repository and audit log, the roles service, and FusionAuth.
 pub fn build<S: UserRolesAndPermissionsService>(
     pool: PgPool,
     roles: S,
     auth: Arc<FusionAuthClient>,
 ) -> SelfHost<S> {
-    SelfHostService::new(PgSelfHostRepo::new(pool), RolesAdapter(roles), auth)
+    SelfHostService::new(
+        PgSelfHostRepo::new(pool.clone()),
+        RolesAdapter(roles),
+        auth,
+        PgAuditLog::new(pool),
+    )
 }
