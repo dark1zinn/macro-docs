@@ -142,6 +142,14 @@ x-macro-env: &macro-env
   OVERRIDE_EMAIL_SERVICE_URL: http://email-service:8080
   OVERRIDE_CALENDAR_SERVICE_URL: http://calendar-service:8080
   OVERRIDE_AI_EDITING_WORKER_URL: http://ai-editing-worker:8933
+  OVERRIDE_CONNECTION_GATEWAY_WEBSOCKET_URL: ws://connection-gateway:8080
+  OVERRIDE_API_GATEWAY_URL: ${MACRO_PUBLIC_URL}
+  # Agent teammates' git repos, served by the agent harness. Clone URLs go to
+  # remote sandboxes, so they use the public route.
+  OVERRIDE_AGENT_GIT_SERVICE_URL: ${MACRO_PUBLIC_URL}/agent-git
+  REPO_STORAGE_ROOT: /data/agent-git
+  MAX_REPO_SIZE_BYTES: "524288000"
+  PUSHES_PER_MINUTE: "30"
   # Mail goes out through the relay (mail-relay), never SES.
   SMTP_HOST: mail-relay
   SMTP_PORT: "587"
@@ -541,9 +549,13 @@ services:
     <<: *app
     image: ${MACRO_IMAGE_PREFIX:-ghcr.io/dark1zinn/macro-selfhost}-sync:${MACRO_VERSION:-main}
     # The image's own CMD (docker/sync-service.Dockerfile), restated because
-    # the secrets entrypoint replaces it. Trace export is replaced too: the
-    # config's otel-collector does not exist here, and empty turns it off.
-    command: ["sh", "-c", "printf \"LOCAL_API_KEY=%s\\nDOCUMENT_PERMISSIONS_SECRET=%s\\nSPS_API_SECRET_KEY=%s\\nDSS_INTERNAL_AUTH_KEY=%s\\nLEXICAL_SERVICE_AUTH_KEY=%s\\n\" \"$$INTERNAL_API_SECRET_KEY\" \"$$DOCUMENT_PERMISSIONS_SECRET\" \"$$INTERNAL_API_SECRET_KEY\" \"$$DSS_INTERNAL_AUTH_KEY\" \"$$INTERNAL_API_SECRET_KEY\" > .dev.vars && CI=true npx wrangler d1 migrations apply USER_PEER_MAPPING --local --config wrangler.docker.toml && exec npx wrangler dev --local --ip 0.0.0.0 --port 8787 --config wrangler.docker.toml --var OTEL_EXPORTER_OTLP_ENDPOINT:${MACRO_OTEL_HTTP_ENDPOINT:-}"]
+    # the secrets entrypoint replaces it. It exports traces to
+    # OTEL_EXPORTER_OTLP_ENDPOINT, set below to the HTTP collector (empty: off).
+    command: ["sh", "-c", "printf \"LOCAL_API_KEY=%s\\nDOCUMENT_PERMISSIONS_SECRET=%s\\nSPS_API_SECRET_KEY=%s\\nDSS_INTERNAL_AUTH_KEY=%s\\nLEXICAL_SERVICE_AUTH_KEY=%s\\n\" \"$$INTERNAL_API_SECRET_KEY\" \"$$DOCUMENT_PERMISSIONS_SECRET\" \"$$INTERNAL_API_SECRET_KEY\" \"$$DSS_INTERNAL_AUTH_KEY\" \"$$INTERNAL_API_SECRET_KEY\" > .dev.vars && CI=true npx wrangler d1 migrations apply USER_PEER_MAPPING --local --config wrangler.docker.toml && exec npx wrangler dev --local --ip 0.0.0.0 --port 8787 --config wrangler.docker.toml --var \"OTEL_EXPORTER_OTLP_ENDPOINT:$${OTEL_EXPORTER_OTLP_ENDPOINT:-}\""]
+    environment:
+      <<: *macro-env
+      # Workers export OTLP over HTTP, not the Rust services' gRPC endpoint.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${MACRO_OTEL_HTTP_ENDPOINT:-}
     volumes:
       - secrets:/run/macro-secrets:ro
       # Durable Object, KV, R2 and D1 state.
@@ -665,6 +677,10 @@ services:
     <<: *rust
     restart: on-failure
     command: ["/app/out/agent_harness_service"]
+    volumes:
+      - secrets:/run/macro-secrets:ro
+      # Agent teammates' bare git repositories (REPO_STORAGE_ROOT).
+      - agent_git_repos:/data/agent-git
     networks:
       edge: { aliases: [agent-harness-service] }
       backend: { aliases: [agent-harness-service] }
@@ -883,3 +899,4 @@ volumes:
   caddy_data:
   caddy_config:
   lgtm_data:
+  agent_git_repos:

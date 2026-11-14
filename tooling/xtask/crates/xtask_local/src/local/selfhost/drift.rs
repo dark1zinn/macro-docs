@@ -44,7 +44,9 @@ fn secret_names(group: &str) -> Vec<&'static str> {
 /// local orchestrator's own bookkeeping, the host-Docker sandbox provider, and
 /// product analytics. document_storage_service requires a PostHog key and a
 /// Meta pixel, so those are set on that service alone; in the shared env they
-/// would switch on the auth service's analytics.
+/// would switch on the auth service's analytics. Also optional features the
+/// stack doesn't deploy: hosted-computer billing (no billing in self-host
+/// mode) and the passwords vault, which needs an OpenBao server.
 const EXCLUDED: &[&str] = &[
     "COMPOSE_PROJECT_NAME",
     "FRONTEND_PORT",
@@ -52,7 +54,15 @@ const EXCLUDED: &[&str] = &[
     "LOCAL_CONTAINER_NETWORK",
     "META_ACCESS_TOKEN",
     "META_PIXEL_ID",
+    "OPENBAO_ADDRESS",
+    "PASSWORDS_JWT_ISSUER",
     "POSTHOG_API_KEY",
+    "STRIPE_COMPUTER_LARGE_MONTHLY_PRICE_ID",
+    "STRIPE_COMPUTER_LARGE_YEARLY_PRICE_ID",
+    "STRIPE_COMPUTER_STANDARD_MONTHLY_PRICE_ID",
+    "STRIPE_COMPUTER_STANDARD_YEARLY_PRICE_ID",
+    "STRIPE_COMPUTER_XL_MONTHLY_PRICE_ID",
+    "STRIPE_COMPUTER_XL_YEARLY_PRICE_ID",
 ];
 
 /// A key the local stack starts to need must reach the self-host services too.
@@ -166,11 +176,9 @@ fn gateway_storage_allowlist_matches_buckets() {
     assert_eq!(allowed, buckets);
 }
 
-/// Compose restates the image's CMD (the secrets entrypoint replaces it),
-/// adding only the trace-export override.
+/// Compose restates the image's CMD exactly (the secrets entrypoint replaces it).
 #[test]
 fn sync_command_matches_its_dockerfile() {
-    const OTEL_OVERRIDE: &str = " --var OTEL_EXPORTER_OTLP_ENDPOINT:${MACRO_OTEL_HTTP_ENDPOINT:-}";
     let dockerfile = repo_file("docker/sync-service.Dockerfile");
     let cmd = dockerfile
         .lines()
@@ -183,11 +191,7 @@ fn sync_command_matches_its_dockerfile() {
         .as_sequence()
         .unwrap()
         .iter()
-        .map(|part| {
-            let part = part.as_str().unwrap().replace("$$", "$");
-            part.strip_suffix(OTEL_OVERRIDE)
-                .map_or(part.clone(), str::to_owned)
-        })
+        .map(|part| part.as_str().unwrap().replace("$$", "$"))
         .collect();
     assert_eq!(restated, image);
 }
