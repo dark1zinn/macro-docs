@@ -1,5 +1,6 @@
 import { authorizeGithub } from '@core/auth/authorize-github';
 import { toast } from '@core/component/Toast/Toast';
+import { isIntegrationAvailable } from '@core/constant/selfHostedAiProviders';
 import { SERVER_HOSTS } from '@core/constant/servers';
 import { fireAndForget } from '@core/util/fireAndForget';
 import GithubIcon from '@icon/mcp-github.svg';
@@ -118,13 +119,15 @@ export function GitHubCard(props: { class?: string } = {}) {
         >
           <Switch
             fallback={
-              <ConnectAction
-                label="Connect"
-                onClick={() =>
-                  fireAndForget(github.connect(), 'github-settings')
-                }
-                disabled={github.connecting()}
-              />
+              <Show when={isIntegrationAvailable('github')}>
+                <ConnectAction
+                  label="Connect"
+                  onClick={() =>
+                    fireAndForget(github.connect(), 'github-settings')
+                  }
+                  disabled={github.connecting()}
+                />
+              </Show>
             }
           >
             <Match when={github.status() === 'linked'}>

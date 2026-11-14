@@ -1,6 +1,7 @@
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { toast } from '@core/component/Toast/Toast';
 import { enableMultiInbox } from '@core/constant/featureFlags';
+import { isIntegrationAvailable } from '@core/constant/selfHostedAiProviders';
 import { useUserId } from '@core/context/user';
 import { useAddInboxFlow } from '@core/email-link';
 import { calendarConsentScopes } from '@core/email-link/consent';
@@ -113,6 +114,7 @@ function CalendarSettingsContent() {
         connecting={connecting()}
         canConnect={
           links.isSuccess &&
+          isIntegrationAvailable('google') &&
           (!accounts().some((a) => a.canManage) || multiInbox().enabled)
         }
         onRetry={() => {

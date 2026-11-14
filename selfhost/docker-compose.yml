@@ -583,6 +583,10 @@ services:
       # The providers whose key is set in .env (the services' stub defaults
       # don't count), served to the web app at /selfhost/config.json.
       MACRO_AI_PROVIDERS: "${ANTHROPIC_API_KEY:+anthropic,}${OPENAI_API_KEY:+openai,}${GOOGLE_GENERATIVE_AI_API_KEY:+google,}${FIREWORK_API_KEY:+fireworks,}${CEREBRAS_API_KEY:+cerebras,}"
+      # Likewise the integrations with credentials in .env: `github` (also
+      # needs the `sso` profile), `google` (Gmail and Calendar, the `email`
+      # profile), `pipedream` (connectors), `slack` (Slack MCP).
+      MACRO_INTEGRATIONS: "${GITHUB_CLIENT_ID:+github,}${GOOGLE_CLIENT_ID:+google,}${PIPEDREAM_PROJECT_ID:+pipedream,}${SLACK_MCP_CLIENT_ID:+slack,}"
     ports:
       - "${MACRO_HTTP_BIND:-0.0.0.0}:${MACRO_HTTP_PORT:-8080}:80"
     healthcheck:

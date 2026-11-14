@@ -4,6 +4,7 @@ import {
 } from '@app/features/calendar/hooks/use-calendar-ui-flag';
 import { t } from '@app/lib/i18n';
 import { useKeyedPersistentToasts } from '@core/component/Toast/useKeyedPersistentToasts';
+import { isIntegrationAvailable } from '@core/constant/selfHostedAiProviders';
 import { useUserId } from '@core/context/user';
 import { useAddInboxFlow } from '@core/email-link';
 import { fireAndForget } from '@core/util/fireAndForget';
@@ -41,7 +42,7 @@ export function CalendarPermissionPrompt() {
 
   useKeyedPersistentToasts({
     items: () =>
-      calendarUiEnabled() && promptAllowed()
+      calendarUiEnabled() && promptAllowed() && isIntegrationAvailable('google')
         ? (linksQuery.isSuccess ? linksQuery.data.links : []).filter(
             (link) =>
               link.macro_id === userId() &&
