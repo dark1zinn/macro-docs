@@ -1,5 +1,6 @@
 import { authorizeGithub } from '@core/auth/authorize-github';
 import { toast } from '@core/component/Toast/Toast';
+import { isIntegrationAvailable } from '@core/constant/selfHostedAiProviders';
 import { useIsAuthenticated } from '@core/context/user';
 import { useAddInboxFlow } from '@core/email-link';
 import { fireAndForget } from '@core/util/fireAndForget';
@@ -76,41 +77,47 @@ export function OnboardingConnectAccounts() {
         Connect More Accounts
       </h1>
       <div>
-        <div class="flex flex-col gap-2">
-          <Button
-            variant="secondary"
-            size="xl"
-            class="border border-edge-muted"
-            disabled={!isAuthenticated()}
-            onClick={() => fireAndForget(addInbox(), 'add-inbox')}
-          >
-            <IconGoogle class="size-5" />
-            Connect Another Gmail
-          </Button>
-          <p class="text-sm/relaxed text-ink-muted">
-            Connect multiple accounts to see all your emails in one inbox.
-          </p>
-        </div>
+        <Show when={isIntegrationAvailable('google')}>
+          <div class="flex flex-col gap-2">
+            <Button
+              variant="secondary"
+              size="xl"
+              class="border border-edge-muted"
+              disabled={!isAuthenticated()}
+              onClick={() => fireAndForget(addInbox(), 'add-inbox')}
+            >
+              <IconGoogle class="size-5" />
+              Connect Another Gmail
+            </Button>
+            <p class="text-sm/relaxed text-ink-muted">
+              Connect multiple accounts to see all your emails in one inbox.
+            </p>
+          </div>
+        </Show>
 
         <div class="h-8" />
 
-        <div class="flex flex-col gap-2">
-          <Button
-            variant="secondary"
-            size="xl"
-            class="border border-edge-muted"
-            disabled={
-              !isAuthenticated() || githubLinked() || initGithubLink.isPending
-            }
-            onClick={() => fireAndForget(connectGithub(), 'mobile-onboarding')}
-          >
-            <GithubIcon class="size-5" />
-            {githubLinked() ? 'GitHub Connected' : 'Connect GitHub'}
-          </Button>
-          <p class="text-sm/relaxed text-ink-muted">
-            Connect GitHub account to see pull requests in your inbox.
-          </p>
-        </div>
+        <Show when={isIntegrationAvailable('github')}>
+          <div class="flex flex-col gap-2">
+            <Button
+              variant="secondary"
+              size="xl"
+              class="border border-edge-muted"
+              disabled={
+                !isAuthenticated() || githubLinked() || initGithubLink.isPending
+              }
+              onClick={() =>
+                fireAndForget(connectGithub(), 'mobile-onboarding')
+              }
+            >
+              <GithubIcon class="size-5" />
+              {githubLinked() ? 'GitHub Connected' : 'Connect GitHub'}
+            </Button>
+            <p class="text-sm/relaxed text-ink-muted">
+              Connect GitHub account to see pull requests in your inbox.
+            </p>
+          </div>
+        </Show>
       </div>
 
       <Show when={hasConnectedAccounts()}>

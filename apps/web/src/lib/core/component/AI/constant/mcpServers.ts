@@ -1,3 +1,4 @@
+import { isIntegrationAvailable } from '@core/constant/selfHostedAiProviders';
 import { SLACK_PIPEDREAM_SLUGS } from '@core/pipedream/slugs';
 import IconDatadog from '@icon/mcp-datadog.svg';
 import IconGithub from '@icon/mcp-github.svg';
@@ -75,14 +76,18 @@ const FEATURED_SERVER_TAGLINES: [name: string, tagline: string][] = [
 
 export type FeaturedMcpServer = QuickConnectServer & { tagline: string };
 
-export const FEATURED_MCP_SERVERS: FeaturedMcpServer[] =
-  FEATURED_SERVER_TAGLINES.flatMap(([name, tagline]) => {
+/** Presets whose integration the self-host operator configured. Reactive. */
+export function featuredMcpServers(): FeaturedMcpServer[] {
+  return FEATURED_SERVER_TAGLINES.flatMap(([name, tagline]) => {
     // Production Slack onboarding uses Pipedream. Keep direct Slack MCP
     // discovery gated until that separate OAuth integration is verified.
     if (name === 'Slack' && import.meta.env.MODE !== 'development') return [];
+    if (name === 'Slack' && !isIntegrationAvailable('slack')) return [];
+    if (name === 'GitHub' && !isIntegrationAvailable('github')) return [];
     const server = QUICK_CONNECT_SERVERS.find((s) => s.server_name === name);
     return server ? [{ ...server, tagline }] : [];
   });
+}
 
 export const QUICK_CONNECT_ICON_MAP: Map<string, SvgIcon> = new Map(
   QUICK_CONNECT_SERVERS.map((s) => [s.url, s.icon])

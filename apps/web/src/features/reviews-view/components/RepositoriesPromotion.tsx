@@ -9,6 +9,7 @@ import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { authorizeGithub } from '@core/auth/authorize-github';
 import { toast } from '@core/component/Toast/Toast';
 import { enableSidebarPromotions } from '@core/constant/featureFlags';
+import { isIntegrationAvailable } from '@core/constant/selfHostedAiProviders';
 import { SERVER_HOSTS } from '@core/constant/servers';
 import { useUserId } from '@core/context/user';
 import { fireAndForget } from '@core/util/fireAndForget';
@@ -89,7 +90,8 @@ export function RepositoriesPromotion(props: { class?: string }) {
       id={COPY.id}
       applies={allOf(
         flagVerdict(promotions()),
-        status() === undefined ? undefined : true
+        status() === undefined ? undefined : true,
+        isIntegrationAvailable('github')
       )}
       logos={COPY.logos}
       headline={COPY.headline}
