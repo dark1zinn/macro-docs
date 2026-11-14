@@ -196,7 +196,8 @@ x-macro-env: &macro-env
   SLACK_MCP_CLIENT_ID: ${SLACK_MCP_CLIENT_ID:-local-slack-mcp-client}
   SLACK_MCP_CLIENT_SECRET: ${SLACK_MCP_CLIENT_SECRET:-local-slack-mcp-secret}
   STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-local-stripe-secret}
-  STRIPE_PRICE_ID: ${STRIPE_PRICE_ID:-local-stripe-price}
+  # The auth service rejects price ids that are not `price_...` at startup.
+  STRIPE_PRICE_ID: ${STRIPE_PRICE_ID:-price_selfhost_unconfigured}
   # Calls: the `calls` profile's LiveKit server; its API secret is generated.
   LIVEKIT_SERVER_URL: ${LIVEKIT_SERVER_URL:-http://livekit:7880}
   LIVEKIT_API_KEY: selfhost
