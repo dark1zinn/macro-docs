@@ -118,8 +118,9 @@
 		handle_path /agent-harness/* {
 			reverse_proxy agent_harness_service:8080
 		}
-		# Served by the agent harness under their own prefix (no strip).
-		@agent_routes path /preview /preview/* /scheduled-action /scheduled-action/* /cognition /cognition/* /mcp /mcp/*
+		# Served by the agent harness under their own prefix (no strip); agent
+		# teammates' git remotes are cloned from /agent-git by sandboxes.
+		@agent_routes path /preview /preview/* /scheduled-action /scheduled-action/* /cognition /cognition/* /mcp /mcp/* /agent-git /agent-git/*
 		handle @agent_routes {
 			reverse_proxy agent_harness_service:8080
 		}
