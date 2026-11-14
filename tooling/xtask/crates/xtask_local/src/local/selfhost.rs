@@ -155,6 +155,7 @@ pub(super) const APP: &str = "app";
 const FUSIONAUTH: &str = "fusionauth";
 const POSTGRES: &str = "postgres";
 const FUSIONAUTH_DB: &str = "fusionauth-db";
+const LIVEKIT: &str = "livekit";
 
 const MACRO_DB_URL: &str = "postgres://macro:{}@postgres:5432/macrodb";
 
@@ -295,6 +296,16 @@ pub(super) const SECRETS: &[Secret] = &[
         canonical: "PREVIEW_SSH_HOST_KEY",
         kind: SecretKind::SshEd25519,
         files: &[raw(APP, "PREVIEW_SSH_HOST_KEY")],
+    },
+    Secret {
+        // Document storage signs LiveKit tokens and API calls with it; the
+        // `calls` profile's LiveKit server reads it as its key pair.
+        canonical: "LIVEKIT_API_SECRET",
+        kind: SecretKind::Hex64,
+        files: &[
+            raw(APP, "LIVEKIT_API_SECRET"),
+            fmt(LIVEKIT, "LIVEKIT_KEYS", "selfhost: {}"),
+        ],
     },
     Secret {
         canonical: "MACRO_API_TOKEN",
