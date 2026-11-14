@@ -52,9 +52,9 @@ built with `VITE_SELF_HOSTED=true`):
   administrator changes this, allows emails, promotes other administrators
   and disables accounts under **Settings → Self-host**.
 - **Administrator actions are audited.** Each one is recorded before it runs,
-  with who did it, to whom, and whether it succeeded, and can't be edited or
-  deleted. The **Audit log** section on the same page filters entries and
-  exports them as CSV.
+  with who did it and to whom, then marked succeeded or failed. Entries can't
+  be deleted, and a recorded outcome can't be changed. The **Audit log**
+  section on the same page filters entries and exports them as CSV.
 - **Every account has every feature.** There are no plans, trials, billing
   or usage limits, and onboarding can be skipped at any step.
 - **Only models you have keys for.** Model pickers list the providers whose
