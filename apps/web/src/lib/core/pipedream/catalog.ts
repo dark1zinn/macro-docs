@@ -1,4 +1,5 @@
 import { toast } from '@core/component/Toast/Toast';
+import { isIntegrationAvailable } from '@core/constant/selfHostedAiProviders';
 import { queryReadyGate } from '@queries/gate';
 import {
   connectPipedreamApp,
@@ -38,6 +39,7 @@ export function createPipedreamCatalogSearch(
   const query = usePipedreamCatalogQuery(search);
 
   const entries = (): PipedreamCatalogEntryResponse[] => {
+    if (!isIntegrationAvailable('pipedream')) return [];
     if (!queryReadyGate(query)) return [];
     return (query.data?.pages ?? [])
       .flatMap((page) => page.servers)

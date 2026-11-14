@@ -1,6 +1,6 @@
 import {
-  FEATURED_MCP_SERVERS,
   type FeaturedMcpServer,
+  featuredMcpServers,
   QUICK_CONNECT_ICON_MAP,
   type SvgIcon,
 } from '@core/component/AI/constant/mcpServers';
@@ -399,7 +399,7 @@ export function IntegrationsSection() {
   const servers = () => serversQuery.data ?? [];
   const existingUrls = () => new Set(servers().map((s) => s.url));
   const suggestions = () =>
-    FEATURED_MCP_SERVERS.filter((s) => !existingUrls().has(s.url));
+    featuredMcpServers().filter((s) => !existingUrls().has(s.url));
 
   return (
     <SettingsSection
