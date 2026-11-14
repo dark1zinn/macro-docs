@@ -89,6 +89,25 @@ fn compose_env_covers_the_local_stack_env() {
     );
 }
 
+/// Analytics settings switch on outbound tracking in every service that reads
+/// them optionally (a placeholder Meta pixel made the auth service post each
+/// signup to graph.facebook.com), so the shared env must never carry them.
+#[test]
+fn compose_env_keeps_analytics_off() {
+    let compose = compose();
+    let shared = keys(&compose["x-macro-env"]);
+    let present: Vec<&String> = shared
+        .iter()
+        .filter(|key| {
+            key.starts_with("META_") || key.starts_with("POSTHOG_") || key.starts_with("GA_")
+        })
+        .collect();
+    assert!(
+        present.is_empty(),
+        "set these only on the service that requires them, never in x-macro-env: {present:?}"
+    );
+}
+
 /// The loader never overrides a set variable, so a secret named in compose
 /// would silently replace the generated one.
 #[test]
