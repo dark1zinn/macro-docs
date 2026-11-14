@@ -741,6 +741,9 @@ pub(super) fn placeholder_google_requests() -> Vec<Upsert> {
     let placeholder = kickstart::GoogleIdp {
         client_id: "selfhost-google-unconfigured".into(),
         client_secret: "selfhost-google-unconfigured".into(),
+        authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth".into(),
+        token_endpoint: "https://oauth2.googleapis.com/token".into(),
+        userinfo_endpoint: "https://openidconnect.googleapis.com/v1/userinfo".into(),
     };
     let mut requests = sso_requests(Some(&placeholder), None);
     for request in &mut requests {
