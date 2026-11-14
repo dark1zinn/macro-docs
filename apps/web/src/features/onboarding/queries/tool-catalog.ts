@@ -13,18 +13,18 @@ export function createOnboardingToolCatalog() {
     setSearch: catalog.onSearchInput,
     entries: () => {
       const search = catalog.search().trim().toLowerCase();
-      const featured = (
-        search
-          ? ONBOARDING_FEATURED_TOOLS.filter((tool) =>
-              tool.name.toLowerCase().includes(search)
-            )
-          : ONBOARDING_FEATURED_TOOLS
-      ).filter((tool) =>
-        // GitHub's featured entry links the GitHub account; the rest are Pipedream connectors.
-        isIntegrationAvailable(tool.slug === 'github' ? 'github' : 'pipedream')
-      );
+      const featured = search
+        ? ONBOARDING_FEATURED_TOOLS.filter((tool) =>
+            tool.name.toLowerCase().includes(search)
+          )
+        : ONBOARDING_FEATURED_TOOLS;
       return [
-        ...featured,
+        // GitHub's featured entry links the GitHub account; the rest are Pipedream connectors.
+        ...featured.filter((tool) =>
+          isIntegrationAvailable(
+            tool.slug === NATIVE_GITHUB_TOOL.slug ? 'github' : 'pipedream'
+          )
+        ),
         ...catalog
           .entries()
           .filter((entry) => entry.app_slug !== NATIVE_GITHUB_TOOL.slug)
