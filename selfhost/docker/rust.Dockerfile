@@ -76,8 +76,10 @@ RUN --mount=type=cache,id=macro-selfhost-cargo-registry,target=/usr/local/cargo/
     && strip /out/* /init/*
 
 FROM debian:trixie-slim AS services
+# git: the agent harness serves agent teammates' repos with `git http-backend`
+# and refuses to start without it.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && apt-get install -y --no-install-recommends ca-certificates curl git \
     && rm -rf /var/lib/apt/lists/*
 # The agent harness runs routine code under Deno.
 COPY --from=denoland/deno:2.9.6 /usr/bin/deno /usr/local/bin/deno
