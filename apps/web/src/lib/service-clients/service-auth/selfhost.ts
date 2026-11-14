@@ -20,6 +20,48 @@ export type SelfHostSignups = {
   allowed_emails: { email: string; created_at: string }[];
 };
 
+export type SelfHostAuditAction =
+  | 'root_claimed'
+  | 'admin_granted'
+  | 'admin_revoked'
+  | 'user_disabled'
+  | 'user_enabled'
+  | 'signup_policy_changed'
+  | 'allowed_email_added'
+  | 'allowed_email_removed';
+
+/** One recorded admin action. `actor` is absent for system actions. */
+export type SelfHostAuditEntry = {
+  id: number;
+  created_at: string;
+  actor: string | null;
+  action: SelfHostAuditAction;
+  target: string | null;
+  details: Record<string, unknown>;
+  status: 'pending' | 'succeeded' | 'failed';
+  error: string | null;
+  completed_at: string | null;
+};
+
+export type SelfHostAuditPage = {
+  entries: SelfHostAuditEntry[];
+  /** Cursor for the next, older page; absent once a page comes back empty. */
+  next_before: number | null;
+};
+
+export type SelfHostAuditFilter = {
+  action?: SelfHostAuditAction;
+  search?: string;
+};
+
+const auditParams = (filter: SelfHostAuditFilter, before?: number) => {
+  const params = new URLSearchParams();
+  if (filter.action) params.set('action', filter.action);
+  if (filter.search?.trim()) params.set('search', filter.search.trim());
+  if (before !== undefined) params.set('before', String(before));
+  return params.toString();
+};
+
 type SelfHostErrorCode = 'SELFHOST_REJECTED';
 
 const base = `${SERVER_HOSTS['auth-service']}/selfhost/admin`;
@@ -81,5 +123,16 @@ export const selfHostClient = {
     fetchWithToken<object, SelfHostErrorCode>(
       `${base}/signups/allowed_emails/remove`,
       send('POST', { email })
+    ),
+  audit: (filter: SelfHostAuditFilter, before?: number) =>
+    fetchWithToken<SelfHostAuditPage, SelfHostErrorCode>(
+      `${base}/audit?${auditParams(filter, before)}`,
+      { errorResponseHandler: readError }
+    ),
+  /** Every matching entry as CSV bytes. */
+  exportAudit: (filter: SelfHostAuditFilter) =>
+    fetchWithToken<Uint8Array, SelfHostErrorCode>(
+      `${base}/audit/export?${auditParams(filter)}`,
+      { errorResponseHandler: readError }
     ),
 };
