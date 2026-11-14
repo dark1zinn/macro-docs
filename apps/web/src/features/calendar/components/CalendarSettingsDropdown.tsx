@@ -2,6 +2,7 @@ import { ViewSidebar } from '@app/components/view-shell';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { MobileDrawer } from '@components/app/mobile/MobileDrawer';
 import { enableMultiInbox } from '@core/constant/featureFlags';
+import { isIntegrationAvailable } from '@core/constant/selfHostedAiProviders';
 import { useAddInboxFlow } from '@core/email-link';
 import { isMobile } from '@core/mobile/isMobile';
 import { fireAndForget } from '@core/util/fireAndForget';
@@ -105,7 +106,8 @@ function createCalendarSettingsControls(isNarrow: () => boolean) {
   // The add-inbox flow is entitlement-gated by the backend (402 -> paywall), so
   // "Connect another account" follows the multi-inbox flag like the email
   // inbox selector rather than mirroring that rule on the client.
-  const showConnectAccount = () => multiInboxFlag().enabled;
+  const showConnectAccount = () =>
+    multiInboxFlag().enabled && isIntegrationAvailable('google');
 
   // Enable re-runs Google consent for calendar on an already-connected inbox;
   // turn off opens the confirmation, which lives outside the closing menu.

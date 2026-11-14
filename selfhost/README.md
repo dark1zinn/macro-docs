@@ -58,6 +58,10 @@ built with `VITE_SELF_HOSTED=true`):
   `GOOGLE_GENERATIVE_AI_API_KEY`, `FIREWORK_API_KEY`, `CEREBRAS_API_KEY`);
   run `docker compose up -d` after changing them (`restart` keeps the old
   values). Voice dictation always needs an OpenAI key.
+- **Only integrations you configure.** Connect buttons for GitHub, Gmail and
+  Google Calendar, Pipedream connectors and Slack appear only when their
+  credentials are set in `.env` (see the Integrations section of
+  `.env.example`); otherwise they're hidden.
 - **No product analytics.** The web app loads no analytics or ad scripts,
   and the services send nothing to PostHog or Meta.
 

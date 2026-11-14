@@ -1,3 +1,4 @@
+import { isIntegrationAvailable } from '@core/constant/selfHostedAiProviders';
 import { fetchEmailConnectionProviders } from '@queries/auth/outlook-link';
 import {
   Button,
@@ -102,6 +103,8 @@ export async function selectEmailProvider(
     /* Gmail remains available when the availability read fails. */
   }
   if (disposed) return undefined;
+  if (!isIntegrationAvailable('google'))
+    return outlookAvailable ? 'OUTLOOK' : undefined;
   if (!outlookAvailable) return 'GMAIL';
   let selected: EmailProvider | undefined;
   const handle = openDialog(
