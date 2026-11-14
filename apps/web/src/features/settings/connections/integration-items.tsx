@@ -5,6 +5,7 @@ import {
   enableMultiInbox,
   enableSlackArchiveImport,
 } from '@core/constant/featureFlags';
+import { isIntegrationAvailable } from '@core/constant/selfHostedAiProviders';
 import { useEmailLinks } from '@core/email-link';
 import { OutlookBetaBadge } from '@core/email-link/OutlookBetaBadge';
 import { PipedreamConnectorIcon } from '@core/pipedream/ConnectorIcon';
@@ -308,12 +309,17 @@ export function useAgentProviderItem(
         >
           <SlackImportAction />
         </Show>
-        <ConnectAction
-          label={status() === 'available' ? 'Connect' : 'Manage'}
-          variant={status() === 'available' ? 'connect' : 'neutral'}
-          ariaLabel={`${status() === 'available' ? 'Connect' : 'Manage'} ${name}`}
-          onClick={() => view.openProvider(provider)}
-        />
+        {/* These connect through Pipedream; existing connections stay manageable. */}
+        <Show
+          when={status() !== 'available' || isIntegrationAvailable('pipedream')}
+        >
+          <ConnectAction
+            label={status() === 'available' ? 'Connect' : 'Manage'}
+            variant={status() === 'available' ? 'connect' : 'neutral'}
+            ariaLabel={`${status() === 'available' ? 'Connect' : 'Manage'} ${name}`}
+            onClick={() => view.openProvider(provider)}
+          />
+        </Show>
       </>
     );
   }
