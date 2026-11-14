@@ -3,10 +3,11 @@
 #   cp .env.example .env      # set MACRO_PUBLIC_URL, mail settings
 #   docker compose pull && docker compose up -d
 #
-# Only `gateway` publishes a port (plus 80/443 for the opt-in `https`
-# profile). Every other container is reachable only on the compose networks.
+# Only `gateway` publishes a port by default. Profiles add their own: 80/443
+# (`https`), LiveKit's media ports (`calls`), and the loopback-only Mailpit
+# and Grafana UIs. Everything else stays on the compose networks.
 # Optional features are compose profiles; set COMPOSE_PROFILES in .env:
-#   search, ai, email, sso, whatsapp, slack, https, mailcatcher, observability
+#   search, ai, email, sso, whatsapp, slack, calls, https, mailcatcher, observability
 #
 # Secrets are generated on first start by `bootstrap` into the `secrets`
 # volume and loaded by each container's entrypoint (selfhost-init in
@@ -188,9 +189,9 @@ x-macro-env: &macro-env
   SLACK_MCP_CLIENT_SECRET: ${SLACK_MCP_CLIENT_SECRET:-local-slack-mcp-secret}
   STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-local-stripe-secret}
   STRIPE_PRICE_ID: ${STRIPE_PRICE_ID:-local-stripe-price}
-  LIVEKIT_SERVER_URL: ${LIVEKIT_SERVER_URL:-http://localhost:7880}
-  LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-local-livekit-key}
-  LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-local-livekit-secret}
+  # Calls: the `calls` profile's LiveKit server; its API secret is generated.
+  LIVEKIT_SERVER_URL: ${LIVEKIT_SERVER_URL:-http://livekit:7880}
+  LIVEKIT_API_KEY: selfhost
   GITHUB_SYNC_APP_URL: ${GITHUB_SYNC_APP_URL:-http://localhost:8080}
   GITHUB_SYNC_APP_CLIENT_ID: ${GITHUB_SYNC_APP_CLIENT_ID:-local-github-sync-client}
   GITHUB_SYNC_APP_CLIENT_SECRET: ${GITHUB_SYNC_APP_CLIENT_SECRET:-local-github-sync-secret}
@@ -476,9 +477,11 @@ services:
       # flag lookups fail fast to their defaults and nothing leaves the host.
       POSTHOG_API_KEY: selfhost-posthog-disabled
       POSTHOG_HOST: http://127.0.0.1:9
-      # No LiveKit server runs in this stack, so calls are unavailable and
-      # the room sweep would only log connection errors every minute.
-      LIVEKIT_ROOM_SWEEP_ENABLED: "false"
+      # Calls need the `calls` profile (a LiveKit server); without it the
+      # room sweep would only log connection errors every minute.
+      LIVEKIT_ROOM_SWEEP_ENABLED: ${MACRO_CALLS_ENABLED:-false}
+      # Browsers reach LiveKit through the gateway, not its internal address.
+      LIVEKIT_PUBLIC_URL: ${MACRO_PUBLIC_URL}/livekit
     networks:
       edge: { aliases: [document-storage-service] }
       backend: { aliases: [document-storage-service] }
@@ -740,6 +743,54 @@ services:
       SLACK_IMPORT_ENABLED: "true"
     healthcheck:
       disable: true
+
+  # ==========================================================================
+  # Profile `calls`: audio and video calls through a LiveKit server. Set
+  # MACRO_CALLS_ENABLED=true with it. Browsers signal through the gateway
+  # (/livekit); media needs the TCP and UDP ports below reachable from users,
+  # and LiveKit must advertise an address they can reach: by default it
+  # discovers the host's public IP; on a LAN or localhost set
+  # MACRO_LIVEKIT_NODE_IP and MACRO_LIVEKIT_USE_EXTERNAL_IP=false.
+  # ==========================================================================
+  livekit:
+    profiles: [calls]
+    image: livekit/livekit-server:v1.13.11
+    restart: unless-stopped
+    init: true
+    logging: *logging
+    # LIVEKIT_KEYS (the shared API key and its generated secret) comes from
+    # the `livekit` secrets group.
+    entrypoint: ["/bin/sh", "/run/macro-secrets/load.sh", "livekit"]
+    command: ["/livekit-server"]
+    environment:
+      LIVEKIT_CONFIG: |
+        port: 7880
+        rtc:
+          tcp_port: ${MACRO_LIVEKIT_TCP_PORT:-7881}
+          udp_port: ${MACRO_LIVEKIT_UDP_PORT:-7882}
+          use_external_ip: ${MACRO_LIVEKIT_USE_EXTERNAL_IP:-true}
+        webhook:
+          api_key: selfhost
+          urls:
+            - http://document-storage-service:8080/call/webhook
+      NODE_IP: ${MACRO_LIVEKIT_NODE_IP:-}
+    volumes:
+      - secrets:/run/macro-secrets:ro
+    ports:
+      # Advertised to clients as-is, so host and container ports match.
+      - "${MACRO_LIVEKIT_BIND:-0.0.0.0}:${MACRO_LIVEKIT_TCP_PORT:-7881}:${MACRO_LIVEKIT_TCP_PORT:-7881}"
+      - "${MACRO_LIVEKIT_BIND:-0.0.0.0}:${MACRO_LIVEKIT_UDP_PORT:-7882}:${MACRO_LIVEKIT_UDP_PORT:-7882}/udp"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:7880/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    networks:
+      edge: { aliases: [livekit] }
+      backend: { aliases: [livekit] }
 
   # ==========================================================================
   # Profile `observability`: traces, logs and metrics from every service in
