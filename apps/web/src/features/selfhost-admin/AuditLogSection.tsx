@@ -28,6 +28,10 @@ const ACTIONS: ActionOption[] = [
   { value: 'signup_policy_changed', label: 'Sign-up policy' },
   { value: 'allowed_email_added', label: 'Email allowed' },
   { value: 'allowed_email_removed', label: 'Email removed' },
+  { value: 'allowed_email_invited', label: 'Email invited' },
+  { value: 'invite_link_revoked', label: 'Invite link revoked' },
+  { value: 'team_invite_revoked', label: 'Workspace invite cancelled' },
+  { value: 'team_invite_resent', label: 'Workspace invite resent' },
   { value: 'root_claimed', label: 'Root admin claimed' },
 ];
 
@@ -69,7 +73,21 @@ export function describeAuditEntry(entry: SelfHostAuditEntry): string {
       return `${who} allowed ${target} to sign up`;
     case 'allowed_email_removed':
       return `${who} removed ${target} from allowed emails`;
+    case 'allowed_email_invited':
+      return `${who} invited ${target} to sign up`;
+    case 'invite_link_revoked':
+      return `${who} revoked the invite link of ${detail(entry, 'team_name')}`;
+    case 'team_invite_revoked':
+      return `${who} cancelled ${target}'s invite to ${detail(entry, 'team_name')}`;
+    case 'team_invite_resent':
+      return `${who} resent ${target}'s invite to ${detail(entry, 'team_name')}`;
   }
+}
+
+/** A string detail of an entry, or "a workspace" when it is missing. */
+function detail(entry: SelfHostAuditEntry, key: string) {
+  const value = entry.details[key];
+  return typeof value === 'string' ? value : 'a workspace';
 }
 
 function outcome(entry: SelfHostAuditEntry) {

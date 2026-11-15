@@ -17,16 +17,61 @@ import type { Accessor } from 'solid-js';
 const selfHostKeys = {
   users: ['selfhost', 'admin', 'users'] as const,
   signups: ['selfhost', 'admin', 'signups'] as const,
+  invites: ['selfhost', 'admin', 'invites'] as const,
   audit: ['selfhost', 'admin', 'audit'] as const,
 };
 
 /** Every admin action changes state and adds an audit entry. */
 const invalidateAdmin = () =>
-  Promise.all([
-    queryClient.invalidateQueries({ queryKey: selfHostKeys.users }),
-    queryClient.invalidateQueries({ queryKey: selfHostKeys.signups }),
-    queryClient.invalidateQueries({ queryKey: selfHostKeys.audit }),
-  ]);
+  Promise.all(
+    Object.values(selfHostKeys).map((queryKey) =>
+      queryClient.invalidateQueries({ queryKey })
+    )
+  );
+
+const invitesQueryOptions = queryOptions({
+  queryKey: selfHostKeys.invites,
+  queryFn: () => throwOnErr(selfHostClient.invites),
+});
+
+/** Every workspace invite link and pending email invite on the server. */
+export function useSelfHostInvitesQuery() {
+  return useQuery(() => invitesQueryOptions);
+}
+
+export type SelfHostInviteAction =
+  | { kind: 'revoke_link'; teamId: string }
+  | { kind: 'revoke_all_links' }
+  | { kind: 'revoke_invite'; inviteId: string }
+  | { kind: 'revoke_all_invites' }
+  | { kind: 'resend_invite'; inviteId: string }
+  | { kind: 'invite_allowed_email'; email: string };
+
+const runInviteAction = (action: SelfHostInviteAction) => {
+  switch (action.kind) {
+    case 'revoke_link':
+      return selfHostClient.revokeInviteLink(action.teamId);
+    case 'revoke_all_links':
+      return selfHostClient.revokeAllInviteLinks();
+    case 'revoke_invite':
+      return selfHostClient.revokeInvite(action.inviteId);
+    case 'revoke_all_invites':
+      return selfHostClient.revokeAllInvites();
+    case 'resend_invite':
+      return selfHostClient.resendInvite(action.inviteId);
+    case 'invite_allowed_email':
+      return selfHostClient.inviteAllowedEmail(action.email);
+  }
+};
+
+/** Revokes, resends or sends invites; refreshes the panel either way. */
+export function useSelfHostInviteActionMutation() {
+  return useMutation(() => ({
+    mutationFn: (action: SelfHostInviteAction) =>
+      throwOnErr(() => runInviteAction(action)),
+    onSettled: invalidateAdmin,
+  }));
+}
 
 const usersQueryOptions = queryOptions({
   queryKey: selfHostKeys.users,
@@ -91,11 +136,11 @@ export function useSetSelfHostPolicyMutation() {
 
 export function useAllowedEmailMutation() {
   return useMutation(() => ({
-    mutationFn: (input: { email: string; remove: boolean }) =>
+    mutationFn: (input: { email: string; remove: boolean; notify?: boolean }) =>
       throwOnErr(() =>
         input.remove
           ? selfHostClient.removeAllowedEmail(input.email)
-          : selfHostClient.addAllowedEmail(input.email)
+          : selfHostClient.addAllowedEmail(input.email, input.notify ?? false)
       ),
     onSettled: invalidateAdmin,
   }));
