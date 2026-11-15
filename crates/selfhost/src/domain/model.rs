@@ -1,6 +1,7 @@
 //! Plain data types for self-host administration.
 
 use chrono::{DateTime, Utc};
+use uuid::Uuid;
 
 /// Signup policy that applies once a root admin exists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,6 +68,53 @@ pub struct AllowedEmail {
     pub created_at: DateTime<Utc>,
 }
 
+/// A workspace's shareable invite link.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InviteLinkRecord {
+    /// The workspace (team) id.
+    pub team_id: Uuid,
+    /// The workspace's name.
+    pub team_name: String,
+    /// The link's secret token.
+    pub token: Uuid,
+    /// When the link was created or last replaced.
+    pub created_at: DateTime<Utc>,
+    /// Macro user id of whoever created or last replaced it; unknown for old links.
+    pub created_by: Option<String>,
+}
+
+/// An email invite to a workspace nobody has answered yet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingInvite {
+    /// The invite id.
+    pub invite_id: Uuid,
+    /// The workspace (team) id.
+    pub team_id: Uuid,
+    /// The workspace's name.
+    pub team_name: String,
+    /// The invited address.
+    pub email: String,
+    /// Macro user id of the inviter.
+    pub invited_by: String,
+    /// Whether the invite is for an agent account.
+    pub is_agent: bool,
+    /// When the invite was created.
+    pub created_at: DateTime<Utc>,
+    /// When the invite was last emailed.
+    pub last_sent_at: DateTime<Utc>,
+    /// The earliest time emailing it again is not rate-limited.
+    pub resendable_at: DateTime<Utc>,
+}
+
+/// Every way into the server: workspace invite links and pending email invites.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct InvitesOverview {
+    /// Invite links, newest first.
+    pub links: Vec<InviteLinkRecord>,
+    /// Pending email invites, newest first.
+    pub invites: Vec<PendingInvite>,
+}
+
 /// An administrative action recorded in the audit log.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuditAction {
@@ -86,11 +134,19 @@ pub enum AuditAction {
     AllowedEmailAdded,
     /// An email was removed from the signup allowlist.
     AllowedEmailRemoved,
+    /// An allowed email was sent an invitation to join this server.
+    AllowedEmailInvited,
+    /// A workspace's invite link was turned off.
+    InviteLinkRevoked,
+    /// A pending workspace email invite was cancelled.
+    TeamInviteRevoked,
+    /// A pending workspace email invite was emailed again.
+    TeamInviteResent,
 }
 
 impl AuditAction {
     /// Every action, in the order the admin panel lists them.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 12] = [
         Self::RootClaimed,
         Self::AdminGranted,
         Self::AdminRevoked,
@@ -99,6 +155,10 @@ impl AuditAction {
         Self::SignupPolicyChanged,
         Self::AllowedEmailAdded,
         Self::AllowedEmailRemoved,
+        Self::AllowedEmailInvited,
+        Self::InviteLinkRevoked,
+        Self::TeamInviteRevoked,
+        Self::TeamInviteResent,
     ];
 
     /// The stored and API string form.
@@ -112,6 +172,10 @@ impl AuditAction {
             Self::SignupPolicyChanged => "signup_policy_changed",
             Self::AllowedEmailAdded => "allowed_email_added",
             Self::AllowedEmailRemoved => "allowed_email_removed",
+            Self::AllowedEmailInvited => "allowed_email_invited",
+            Self::InviteLinkRevoked => "invite_link_revoked",
+            Self::TeamInviteRevoked => "team_invite_revoked",
+            Self::TeamInviteResent => "team_invite_resent",
         }
     }
 
@@ -182,9 +246,9 @@ pub enum SelfHostError {
     /// The caller is not an admin (403).
     #[error("admin role required")]
     Forbidden,
-    /// The target does not exist (404).
-    #[error("user not found")]
-    NotFound,
+    /// The target does not exist (404); names what was looked for.
+    #[error("{0} not found")]
+    NotFound(&'static str),
     /// The request breaks a self-host rule (409).
     #[error("{0}")]
     Conflict(String),

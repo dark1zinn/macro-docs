@@ -4,9 +4,11 @@ use std::collections::HashSet;
 
 use async_trait::async_trait;
 use roles_and_permissions::domain::model::RoleId;
+use uuid::Uuid;
 
 use super::model::{
-    AllowedEmail, AuditEntry, AuditQuery, AuditStatus, NewAuditEntry, SignupPolicy, UserRecord,
+    AllowedEmail, AuditEntry, AuditQuery, AuditStatus, InviteLinkRecord, NewAuditEntry,
+    PendingInvite, SelfHostError, SignupPolicy, UserRecord,
 };
 
 /// Persistence for self-host state.
@@ -88,4 +90,44 @@ pub trait AuditLog: Send + Sync + 'static {
 
     /// Lists entries newest first. `query.limit` is already clamped.
     async fn list(&self, query: &AuditQuery) -> anyhow::Result<Vec<AuditEntry>>;
+}
+
+/// Every workspace's invite links and pending email invites. Changes go
+/// through the workspaces' own rules, with `admin` (a Macro user id the domain
+/// has confirmed is an instance admin) recorded as the actor.
+#[async_trait]
+pub trait WorkspaceInvites: Send + Sync + 'static {
+    /// Every workspace invite link, newest first.
+    async fn list_links(&self) -> anyhow::Result<Vec<InviteLinkRecord>>;
+
+    /// Every pending email invite, newest first.
+    async fn list_pending(&self) -> anyhow::Result<Vec<PendingInvite>>;
+
+    /// The workspace's invite link, if it has one.
+    async fn find_link(&self, team_id: Uuid) -> anyhow::Result<Option<InviteLinkRecord>>;
+
+    /// One pending email invite.
+    async fn find_pending(&self, invite_id: Uuid) -> anyhow::Result<Option<PendingInvite>>;
+
+    /// Turns off the workspace's invite link.
+    async fn revoke_link(&self, admin: &str, team_id: Uuid) -> Result<(), SelfHostError>;
+
+    /// Cancels a pending email invite.
+    async fn revoke_invite(&self, admin: &str, invite: &PendingInvite)
+    -> Result<(), SelfHostError>;
+
+    /// Emails a pending invite again. Returns `false` when it was emailed too
+    /// recently and nothing was sent.
+    async fn resend_invite(
+        &self,
+        admin: &str,
+        invite: &PendingInvite,
+    ) -> Result<bool, SelfHostError>;
+}
+
+/// Invitations to join this server, for people who have no account yet.
+#[async_trait]
+pub trait ServerInviter: Send + Sync + 'static {
+    /// Emails `email` an invitation to sign up, sent on behalf of `admin`.
+    async fn invite(&self, admin: &str, email: &str) -> anyhow::Result<()>;
 }

@@ -4,14 +4,17 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use roles_and_permissions::domain::model::RoleId;
+use uuid::Uuid;
 
 use super::model::{
-    AllowedEmail, AuditAction, AuditEntry, AuditQuery, AuditStatus, NewAuditEntry, SelfHostError,
-    SignupPolicy, UserRecord,
+    AllowedEmail, AuditAction, AuditEntry, AuditQuery, AuditStatus, InviteLinkRecord,
+    NewAuditEntry, PendingInvite, SelfHostError, SignupPolicy, UserRecord,
 };
-use super::ports::{AccountPort, AuditLog, RolesPort, SelfHostRepo};
+use super::ports::{
+    AccountPort, AuditLog, RolesPort, SelfHostRepo, ServerInviter, WorkspaceInvites,
+};
 use super::service::SelfHostService;
 
 #[derive(Default)]
@@ -37,6 +40,16 @@ struct State {
     fail_audit: bool,
     /// The last query the audit log was listed with.
     last_audit_query: Option<AuditQuery>,
+    /// Workspace invite links.
+    links: Vec<InviteLinkRecord>,
+    /// Pending workspace email invites.
+    pending: Vec<PendingInvite>,
+    /// Invites emailed again, by id.
+    resent: Vec<Uuid>,
+    /// When set, a resend finds the invite inside its resend window.
+    resend_too_soon: bool,
+    /// Server invitations sent, by address.
+    server_invites: Vec<String>,
 }
 
 #[derive(Clone, Default)]
@@ -360,8 +373,83 @@ impl AuditLog for Fake {
     }
 }
 
-fn service(f: &Fake) -> SelfHostService<Fake, Fake, Fake, Fake> {
-    SelfHostService::new(f.clone(), f.clone(), f.clone(), f.clone())
+#[async_trait]
+impl WorkspaceInvites for Fake {
+    async fn list_links(&self) -> anyhow::Result<Vec<InviteLinkRecord>> {
+        Ok(self.0.lock().unwrap().links.clone())
+    }
+
+    async fn list_pending(&self) -> anyhow::Result<Vec<PendingInvite>> {
+        Ok(self.0.lock().unwrap().pending.clone())
+    }
+
+    async fn find_link(&self, team_id: Uuid) -> anyhow::Result<Option<InviteLinkRecord>> {
+        let state = self.0.lock().unwrap();
+        Ok(state.links.iter().find(|l| l.team_id == team_id).cloned())
+    }
+
+    async fn find_pending(&self, invite_id: Uuid) -> anyhow::Result<Option<PendingInvite>> {
+        let state = self.0.lock().unwrap();
+        Ok(state
+            .pending
+            .iter()
+            .find(|i| i.invite_id == invite_id)
+            .cloned())
+    }
+
+    async fn revoke_link(&self, _admin: &str, team_id: Uuid) -> Result<(), SelfHostError> {
+        self.0
+            .lock()
+            .unwrap()
+            .links
+            .retain(|l| l.team_id != team_id);
+        Ok(())
+    }
+
+    async fn revoke_invite(
+        &self,
+        _admin: &str,
+        invite: &PendingInvite,
+    ) -> Result<(), SelfHostError> {
+        self.0
+            .lock()
+            .unwrap()
+            .pending
+            .retain(|i| i.invite_id != invite.invite_id);
+        Ok(())
+    }
+
+    async fn resend_invite(
+        &self,
+        _admin: &str,
+        invite: &PendingInvite,
+    ) -> Result<bool, SelfHostError> {
+        let mut state = self.0.lock().unwrap();
+        if state.resend_too_soon {
+            return Ok(false);
+        }
+        state.resent.push(invite.invite_id);
+        Ok(true)
+    }
+}
+
+#[async_trait]
+impl ServerInviter for Fake {
+    async fn invite(&self, _admin: &str, email: &str) -> anyhow::Result<()> {
+        self.0.lock().unwrap().server_invites.push(email.into());
+        Ok(())
+    }
+}
+
+fn service(f: &Fake) -> SelfHostService<Fake, Fake, Fake, Fake, Fake, Fake> {
+    SelfHostService::new(
+        f.clone(),
+        f.clone(),
+        f.clone(),
+        f.clone(),
+        f.clone(),
+        f.clone(),
+    )
 }
 
 #[tokio::test]
@@ -426,7 +514,7 @@ async fn invite_only_allows_allowlisted_and_invited_email_case_insensitively() {
     f.grant("root@example.com", RoleId::SuperAdmin);
     f.invite("invited@example.com");
     let svc = service(&f);
-    svc.add_allowed_email("macro|root@example.com", "Listed@Example.com")
+    svc.add_allowed_email("macro|root@example.com", "Listed@Example.com", false)
         .await
         .unwrap();
 
@@ -607,7 +695,7 @@ async fn unknown_user_is_not_found() {
         .await
         .unwrap_err();
 
-    assert!(matches!(err, SelfHostError::NotFound));
+    assert!(matches!(err, SelfHostError::NotFound("user")));
 }
 
 #[tokio::test]
@@ -617,7 +705,7 @@ async fn malformed_signup_email_is_rejected_as_invalid() {
     let svc = service(&f);
 
     let err = svc
-        .add_allowed_email("macro|root@example.com", "not an email")
+        .add_allowed_email("macro|root@example.com", "not an email", false)
         .await
         .unwrap_err();
 
@@ -643,7 +731,7 @@ async fn every_admin_action_is_recorded_with_its_actor_target_and_outcome() {
     svc.set_disabled(ROOT, SECOND, true).await.unwrap();
     svc.set_disabled(ROOT, SECOND, false).await.unwrap();
     svc.set_policy(ROOT, SignupPolicy::Open).await.unwrap();
-    svc.add_allowed_email(ROOT, " New@Example.com ")
+    svc.add_allowed_email(ROOT, " New@Example.com ", false)
         .await
         .unwrap();
     svc.remove_allowed_email(ROOT, "new@example.com")
@@ -739,7 +827,7 @@ async fn no_ops_invalid_input_and_non_admin_calls_record_nothing() {
     svc.set_policy(ROOT, SignupPolicy::InviteOnly)
         .await
         .unwrap();
-    svc.add_allowed_email(ROOT, "not an email")
+    svc.add_allowed_email(ROOT, "not an email", false)
         .await
         .unwrap_err();
     svc.set_admin(SECOND, SECOND, true).await.unwrap_err();
@@ -783,4 +871,226 @@ async fn the_audit_listing_needs_an_admin_and_caps_the_page_size() {
     let query = f.0.lock().unwrap().last_audit_query.clone().unwrap();
     assert_eq!(query.limit, Some(200));
     assert_eq!(query.search, None, "blank search means no filter");
+}
+
+fn link(team: u128, name: &str) -> InviteLinkRecord {
+    InviteLinkRecord {
+        team_id: Uuid::from_u128(team),
+        team_name: name.into(),
+        token: Uuid::from_u128(team + 100),
+        created_at: Utc::now(),
+        created_by: Some(SECOND.into()),
+    }
+}
+
+fn pending(id: u128, team: u128, email: &str) -> PendingInvite {
+    let now = Utc::now();
+    PendingInvite {
+        invite_id: Uuid::from_u128(id),
+        team_id: Uuid::from_u128(team),
+        team_name: "Design".into(),
+        email: email.into(),
+        invited_by: SECOND.into(),
+        is_agent: false,
+        created_at: now,
+        last_sent_at: now,
+        resendable_at: now + Duration::minutes(10),
+    }
+}
+
+/// Root admin with two workspace links and two pending invites.
+fn with_invites() -> Fake {
+    let f = two_users_with_root();
+    {
+        let mut state = f.0.lock().unwrap();
+        state.links = vec![link(1, "Design"), link(2, "Sales")];
+        state.pending = vec![
+            pending(10, 1, "a@example.com"),
+            pending(11, 2, "b@example.com"),
+        ];
+    }
+    f
+}
+
+#[tokio::test]
+async fn the_admin_sees_every_workspace_invite_and_others_cannot() {
+    let f = with_invites();
+    let svc = service(&f);
+
+    let overview = svc.list_invites(ROOT).await.unwrap();
+    assert_eq!(overview.links.len(), 2);
+    assert_eq!(overview.invites.len(), 2);
+
+    let err = svc.list_invites(SECOND).await.unwrap_err();
+    assert!(matches!(err, SelfHostError::Forbidden));
+    let err = svc
+        .revoke_invite(SECOND, Uuid::from_u128(10))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, SelfHostError::Forbidden));
+    assert_eq!(
+        f.0.lock().unwrap().pending.len(),
+        2,
+        "nothing was cancelled"
+    );
+    assert!(f.audit().is_empty());
+}
+
+#[tokio::test]
+async fn revoking_and_resending_invites_are_audited_against_their_targets() {
+    let f = with_invites();
+    let svc = service(&f);
+
+    svc.revoke_invite_link(ROOT, Uuid::from_u128(1))
+        .await
+        .unwrap();
+    svc.resend_invite(ROOT, Uuid::from_u128(11)).await.unwrap();
+    svc.revoke_invite(ROOT, Uuid::from_u128(10)).await.unwrap();
+
+    let state = f.0.lock().unwrap();
+    let remaining: Vec<_> = state.links.iter().map(|l| l.team_id).collect();
+    assert_eq!(remaining, [Uuid::from_u128(2)]);
+    assert_eq!(state.resent, [Uuid::from_u128(11)]);
+    assert_eq!(state.pending.len(), 1);
+    drop(state);
+    let recorded: Vec<_> = f
+        .audit()
+        .into_iter()
+        .map(|(_, a, t, s)| (a, t, s))
+        .collect();
+    assert_eq!(
+        recorded,
+        [
+            (
+                AuditAction::InviteLinkRevoked,
+                Some(Uuid::from_u128(1).to_string()),
+                AuditStatus::Succeeded
+            ),
+            (
+                AuditAction::TeamInviteResent,
+                Some("b@example.com".into()),
+                AuditStatus::Succeeded
+            ),
+            (
+                AuditAction::TeamInviteRevoked,
+                Some("a@example.com".into()),
+                AuditStatus::Succeeded
+            ),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn revoking_all_audits_each_item_and_reports_the_count() {
+    let f = with_invites();
+    let svc = service(&f);
+
+    assert_eq!(svc.revoke_all_invite_links(ROOT).await.unwrap(), 2);
+    assert_eq!(svc.revoke_all_invites(ROOT).await.unwrap(), 2);
+
+    let state = f.0.lock().unwrap();
+    assert!(state.links.is_empty() && state.pending.is_empty());
+    drop(state);
+    assert_eq!(f.audit().len(), 4);
+}
+
+#[tokio::test]
+async fn a_resend_inside_the_window_is_refused_and_recorded_as_failed() {
+    let f = with_invites();
+    f.0.lock().unwrap().resend_too_soon = true;
+    let svc = service(&f);
+
+    let err = svc
+        .resend_invite(ROOT, Uuid::from_u128(10))
+        .await
+        .unwrap_err();
+
+    assert!(matches!(err, SelfHostError::Conflict(_)));
+    assert!(matches!(
+        f.audit().as_slice(),
+        [(_, AuditAction::TeamInviteResent, _, AuditStatus::Failed(_))]
+    ));
+}
+
+#[tokio::test]
+async fn unknown_invites_and_links_are_not_found_and_not_audited() {
+    let f = with_invites();
+    let svc = service(&f);
+
+    let err = svc
+        .resend_invite(ROOT, Uuid::from_u128(99))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, SelfHostError::NotFound("invite")));
+    let err = svc
+        .revoke_invite_link(ROOT, Uuid::from_u128(99))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, SelfHostError::NotFound("invite link")));
+    assert!(f.audit().is_empty());
+}
+
+#[tokio::test]
+async fn allowing_an_email_can_send_a_server_invitation() {
+    let f = two_users_with_root();
+    let svc = service(&f);
+
+    svc.add_allowed_email(ROOT, "Quiet@Example.com", false)
+        .await
+        .unwrap();
+    svc.add_allowed_email(ROOT, "Told@Example.com", true)
+        .await
+        .unwrap();
+    svc.invite_allowed_email(ROOT, "quiet@example.com")
+        .await
+        .unwrap();
+
+    assert_eq!(
+        f.0.lock().unwrap().server_invites,
+        ["told@example.com", "quiet@example.com"]
+    );
+    let invited: Vec<_> = f
+        .audit()
+        .into_iter()
+        .filter(|(_, a, _, _)| *a == AuditAction::AllowedEmailInvited)
+        .map(|(_, _, t, s)| (t, s))
+        .collect();
+    assert_eq!(
+        invited,
+        [
+            (Some("told@example.com".into()), AuditStatus::Succeeded),
+            (Some("quiet@example.com".into()), AuditStatus::Succeeded),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn server_invitations_need_an_allowed_address_without_an_account() {
+    let f = two_users_with_root();
+    let svc = service(&f);
+
+    let err = svc
+        .invite_allowed_email(ROOT, "stranger@example.com")
+        .await
+        .unwrap_err();
+    assert!(matches!(err, SelfHostError::NotFound("allowed email")));
+
+    svc.add_allowed_email(ROOT, "second@example.com", false)
+        .await
+        .unwrap();
+    let err = svc
+        .invite_allowed_email(ROOT, "second@example.com")
+        .await
+        .unwrap_err();
+    assert!(matches!(err, SelfHostError::Conflict(_)));
+    assert!(f.0.lock().unwrap().server_invites.is_empty());
+    assert!(matches!(
+        f.audit().last(),
+        Some((
+            _,
+            AuditAction::AllowedEmailInvited,
+            _,
+            AuditStatus::Failed(_)
+        ))
+    ));
 }

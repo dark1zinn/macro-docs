@@ -301,8 +301,15 @@ pub(crate) struct ApiContext {
     pub teams_service: Arc<TeamsServiceType>,
     pub domain_notice_service: Arc<DomainNoticeServiceType>,
     /// Self-host admin and signup policy; `None` unless `MACRO_SELF_HOSTED=true`.
-    pub selfhost:
-        Option<Arc<selfhost::composition::SelfHost<UserRolesAndPermissionsServiceImpl<MacroDB>>>>,
+    pub selfhost: Option<
+        Arc<
+            selfhost::composition::SelfHost<
+                UserRolesAndPermissionsServiceImpl<MacroDB>,
+                TeamsServiceType,
+                ReferralServiceType,
+            >,
+        >,
+    >,
     pub channel_service: Arc<ChannelServiceType>,
     pub channel_messages: Arc<dyn messages::domain::api::MessageCommands>,
     pub favorites_service: Arc<FavoritesServiceType>,
