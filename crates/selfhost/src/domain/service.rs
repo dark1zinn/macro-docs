@@ -1,4 +1,5 @@
-//! Self-host rules: entitlements, root admin, signup policy, and admin actions.
+//! Self-host rules: entitlements, root admin, signup policy, invites, and
+//! admin actions.
 //!
 //! Every admin action is audited before it runs: a pending entry is recorded,
 //! then settled with the outcome. If the entry cannot be recorded, the action
@@ -7,12 +8,15 @@
 use macro_user_id::user_id::MacroUserIdStr;
 use roles_and_permissions::domain::model::RoleId;
 use serde_json::json;
+use uuid::Uuid;
 
 use super::model::{
-    AllowedEmail, AuditAction, AuditEntry, AuditQuery, AuditStatus, NewAuditEntry, SelfHostError,
-    SignupPolicy, UserEntry, UserRecord,
+    AllowedEmail, AuditAction, AuditEntry, AuditQuery, AuditStatus, InvitesOverview, NewAuditEntry,
+    PendingInvite, SelfHostError, SignupPolicy, UserEntry, UserRecord,
 };
-use super::ports::{AccountPort, AuditLog, RolesPort, SelfHostRepo};
+use super::ports::{
+    AccountPort, AuditLog, RolesPort, SelfHostRepo, ServerInviter, WorkspaceInvites,
+};
 
 /// Default and largest audit page sizes.
 const AUDIT_PAGE: i64 = 50;
@@ -24,27 +28,33 @@ fn entitlements() -> [RoleId; 2] {
 }
 
 /// Enforces self-host rules over the ports.
-pub struct SelfHostService<R, P, A, L> {
+pub struct SelfHostService<R, P, A, L, W, I> {
     repo: R,
     roles: P,
     accounts: A,
     audit: L,
+    workspaces: W,
+    inviter: I,
 }
 
-impl<R, P, A, L> SelfHostService<R, P, A, L>
+impl<R, P, A, L, W, I> SelfHostService<R, P, A, L, W, I>
 where
     R: SelfHostRepo,
     P: RolesPort,
     A: AccountPort,
     L: AuditLog,
+    W: WorkspaceInvites,
+    I: ServerInviter,
 {
     /// Creates the service from its ports.
-    pub fn new(repo: R, roles: P, accounts: A, audit: L) -> Self {
+    pub fn new(repo: R, roles: P, accounts: A, audit: L, workspaces: W, inviter: I) -> Self {
         Self {
             repo,
             roles,
             accounts,
             audit,
+            workspaces,
+            inviter,
         }
     }
 
@@ -239,8 +249,14 @@ where
         .await
     }
 
-    /// Allowlists a signup email. Requires an admin caller.
-    pub async fn add_allowed_email(&self, caller: &str, email: &str) -> Result<(), SelfHostError> {
+    /// Allowlists a signup email and, when `notify`, emails that person an
+    /// invitation to sign up. Requires an admin caller.
+    pub async fn add_allowed_email(
+        &self,
+        caller: &str,
+        email: &str,
+        notify: bool,
+    ) -> Result<(), SelfHostError> {
         self.require_admin(caller).await?;
         let email = normalize_email(email)?;
         self.run_audited(
@@ -250,7 +266,32 @@ where
                 Ok(())
             },
         )
-        .await
+        .await?;
+        if notify {
+            self.send_server_invite(caller, &email).await?;
+        }
+        Ok(())
+    }
+
+    /// Emails an allowed address an invitation to sign up. Requires an admin
+    /// caller; the address must be allowed and must not have an account yet.
+    pub async fn invite_allowed_email(
+        &self,
+        caller: &str,
+        email: &str,
+    ) -> Result<(), SelfHostError> {
+        self.require_admin(caller).await?;
+        let email = normalize_email(email)?;
+        if !self
+            .repo
+            .list_allowed_emails()
+            .await?
+            .iter()
+            .any(|allowed| allowed.email == email)
+        {
+            return Err(SelfHostError::NotFound("allowed email"));
+        }
+        self.send_server_invite(caller, &email).await
     }
 
     /// Removes a signup email from the allowlist. Requires an admin caller.
@@ -265,6 +306,121 @@ where
             email_entry(caller, AuditAction::AllowedEmailRemoved, &email),
             async {
                 self.repo.remove_allowed_email(&email).await?;
+                Ok(())
+            },
+        )
+        .await
+    }
+
+    /// Every workspace invite link and pending email invite. Requires an admin caller.
+    pub async fn list_invites(&self, caller: &str) -> Result<InvitesOverview, SelfHostError> {
+        self.require_admin(caller).await?;
+        Ok(InvitesOverview {
+            links: self.workspaces.list_links().await?,
+            invites: self.workspaces.list_pending().await?,
+        })
+    }
+
+    /// Turns off a workspace's invite link. Requires an admin caller.
+    pub async fn revoke_invite_link(
+        &self,
+        caller: &str,
+        team_id: Uuid,
+    ) -> Result<(), SelfHostError> {
+        self.require_admin(caller).await?;
+        let link = self
+            .workspaces
+            .find_link(team_id)
+            .await?
+            .ok_or(SelfHostError::NotFound("invite link"))?;
+        let entry = NewAuditEntry {
+            actor: Some(caller.to_owned()),
+            action: AuditAction::InviteLinkRevoked,
+            target: Some(link.team_id.to_string()),
+            details: json!({ "team_name": link.team_name, "created_by": link.created_by }),
+        };
+        self.run_audited(entry, self.workspaces.revoke_link(caller, team_id))
+            .await
+    }
+
+    /// Turns off every workspace invite link, each audited on its own.
+    /// Requires an admin caller. Returns how many were turned off; stops at
+    /// the first failure.
+    pub async fn revoke_all_invite_links(&self, caller: &str) -> Result<usize, SelfHostError> {
+        self.require_admin(caller).await?;
+        let links = self.workspaces.list_links().await?;
+        for link in &links {
+            self.revoke_invite_link(caller, link.team_id).await?;
+        }
+        Ok(links.len())
+    }
+
+    /// Cancels a pending email invite. Requires an admin caller.
+    pub async fn revoke_invite(&self, caller: &str, invite_id: Uuid) -> Result<(), SelfHostError> {
+        self.require_admin(caller).await?;
+        let invite = self.pending(invite_id).await?;
+        self.run_audited(
+            invite_entry(caller, AuditAction::TeamInviteRevoked, &invite),
+            self.workspaces.revoke_invite(caller, &invite),
+        )
+        .await
+    }
+
+    /// Cancels every pending email invite, each audited on its own. Requires
+    /// an admin caller. Returns how many were cancelled; stops at the first failure.
+    pub async fn revoke_all_invites(&self, caller: &str) -> Result<usize, SelfHostError> {
+        self.require_admin(caller).await?;
+        let invites = self.workspaces.list_pending().await?;
+        for invite in &invites {
+            self.revoke_invite(caller, invite.invite_id).await?;
+        }
+        Ok(invites.len())
+    }
+
+    /// Emails a pending invite again. Requires an admin caller. Refused while
+    /// the invite is inside its resend window.
+    pub async fn resend_invite(&self, caller: &str, invite_id: Uuid) -> Result<(), SelfHostError> {
+        self.require_admin(caller).await?;
+        let invite = self.pending(invite_id).await?;
+        self.run_audited(
+            invite_entry(caller, AuditAction::TeamInviteResent, &invite),
+            async {
+                if self.workspaces.resend_invite(caller, &invite).await? {
+                    Ok(())
+                } else {
+                    Err(SelfHostError::Conflict(format!(
+                        "this invite was emailed recently; it can be resent after {}",
+                        invite.resendable_at.to_rfc3339()
+                    )))
+                }
+            },
+        )
+        .await
+    }
+
+    async fn pending(&self, invite_id: Uuid) -> Result<PendingInvite, SelfHostError> {
+        self.workspaces
+            .find_pending(invite_id)
+            .await?
+            .ok_or(SelfHostError::NotFound("invite"))
+    }
+
+    /// Emails a server invitation, refusing addresses that already have an account.
+    async fn send_server_invite(&self, caller: &str, email: &str) -> Result<(), SelfHostError> {
+        let has_account = self
+            .repo
+            .find_user(&macro_user_id_for(email)?)
+            .await?
+            .is_some();
+        self.run_audited(
+            email_entry(caller, AuditAction::AllowedEmailInvited, email),
+            async {
+                if has_account {
+                    return Err(SelfHostError::Conflict(
+                        "this address already has an account".into(),
+                    ));
+                }
+                self.inviter.invite(caller, email).await?;
                 Ok(())
             },
         )
@@ -358,7 +514,7 @@ where
         self.repo
             .find_user(user_id)
             .await?
-            .ok_or(SelfHostError::NotFound)
+            .ok_or(SelfHostError::NotFound("user"))
     }
 }
 
@@ -369,6 +525,20 @@ fn email_entry(caller: &str, action: AuditAction, email: &str) -> NewAuditEntry 
         action,
         target: Some(email.to_owned()),
         details: json!({}),
+    }
+}
+
+/// An audit entry for an action on a pending workspace email invite.
+fn invite_entry(caller: &str, action: AuditAction, invite: &PendingInvite) -> NewAuditEntry {
+    NewAuditEntry {
+        actor: Some(caller.to_owned()),
+        action,
+        target: Some(invite.email.clone()),
+        details: json!({
+            "invite_id": invite.invite_id,
+            "team_id": invite.team_id,
+            "team_name": invite.team_name,
+        }),
     }
 }
 

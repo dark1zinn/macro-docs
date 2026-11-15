@@ -561,6 +561,7 @@ async fn run_server() -> anyhow::Result<()> {
         rewarder: invite_rewards.clone(),
         notification_ingress: notification_ingress_service.clone(),
     };
+    let referral_service = Arc::new(referral_service);
     let gtm_invite_service = GtmInviteServiceImpl {
         repo: PgGtmInviteRepo::new(db.clone()),
         config: gtm_invite_config,
@@ -914,6 +915,8 @@ async fn run_server() -> anyhow::Result<()> {
             db.clone(),
             user_roles_and_permissions_service.clone(),
             Arc::new(auth_client.clone()),
+            teams_service.clone(),
+            referral_service.clone(),
         );
         handle
             .backfill()
@@ -979,7 +982,7 @@ async fn run_server() -> anyhow::Result<()> {
             channel_messages,
             favorites_service: Arc::new(favorites_service),
             entity_access_service: entity_access_service_impl,
-            referral_service: Arc::new(referral_service),
+            referral_service,
             user_language_service,
             gtm_invite_service,
             system_status_service,

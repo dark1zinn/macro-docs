@@ -14,7 +14,8 @@ use axum::{
 use chrono::{DateTime, Utc};
 use macro_authorization::{MacroAuthorizationExtractor, UserOnly};
 use selfhost::domain::model::{
-    AuditAction, AuditEntry, AuditQuery, AuditStatus, SelfHostError, SignupPolicy, UserEntry,
+    AuditAction, AuditEntry, AuditQuery, AuditStatus, InvitesOverview, SelfHostError, SignupPolicy,
+    UserEntry,
 };
 use serde::{Deserialize, Serialize};
 
@@ -85,6 +86,89 @@ struct PolicyBody {
 #[derive(Deserialize)]
 struct EmailBody {
     email: String,
+}
+
+#[derive(Deserialize)]
+struct AllowEmailBody {
+    email: String,
+    /// Also email the person an invitation to sign up.
+    #[serde(default)]
+    notify: bool,
+}
+
+#[derive(Deserialize)]
+struct TeamBody {
+    team_id: uuid::Uuid,
+}
+
+#[derive(Deserialize)]
+struct InviteBody {
+    invite_id: uuid::Uuid,
+}
+
+#[derive(Serialize)]
+struct RevokedResponse {
+    revoked: usize,
+}
+
+#[derive(Serialize)]
+struct InviteLinkItem {
+    team_id: uuid::Uuid,
+    team_name: String,
+    token: uuid::Uuid,
+    created_at: DateTime<Utc>,
+    /// Macro user id of whoever created or last replaced the link.
+    created_by: Option<String>,
+}
+
+#[derive(Serialize)]
+struct PendingInviteItem {
+    invite_id: uuid::Uuid,
+    team_id: uuid::Uuid,
+    team_name: String,
+    email: String,
+    invited_by: String,
+    created_at: DateTime<Utc>,
+    last_sent_at: DateTime<Utc>,
+    resendable_at: DateTime<Utc>,
+}
+
+#[derive(Serialize)]
+struct InvitesResponse {
+    links: Vec<InviteLinkItem>,
+    invites: Vec<PendingInviteItem>,
+}
+
+impl From<InvitesOverview> for InvitesResponse {
+    fn from(overview: InvitesOverview) -> Self {
+        Self {
+            links: overview
+                .links
+                .into_iter()
+                .map(|l| InviteLinkItem {
+                    team_id: l.team_id,
+                    team_name: l.team_name,
+                    token: l.token,
+                    created_at: l.created_at,
+                    created_by: l.created_by,
+                })
+                .collect(),
+            invites: overview
+                .invites
+                .into_iter()
+                .map(|i| PendingInviteItem {
+                    invite_id: i.invite_id,
+                    team_id: i.team_id,
+                    team_name: i.team_name,
+                    email: i.email,
+                    invited_by: i.invited_by,
+                    created_at: i.created_at,
+                    last_sent_at: i.last_sent_at,
+                    resendable_at: i.resendable_at,
+                })
+                .collect(),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -159,7 +243,7 @@ fn error_response(error: SelfHostError) -> Response {
     let (status, message) = match error {
         SelfHostError::Invalid(message) => (StatusCode::BAD_REQUEST, message),
         SelfHostError::Forbidden => (StatusCode::FORBIDDEN, "admin role required".into()),
-        SelfHostError::NotFound => (StatusCode::NOT_FOUND, "user not found".into()),
+        SelfHostError::NotFound(what) => (StatusCode::NOT_FOUND, format!("{what} not found")),
         SelfHostError::Conflict(message) => (StatusCode::CONFLICT, message),
         SelfHostError::Internal(error) => {
             tracing::error!(error=?error, "self-host operation failed");
@@ -261,10 +345,98 @@ async fn set_policy(
 async fn add_allowed_email(
     State(ctx): State<ApiContext>,
     user: User,
+    Json(body): Json<AllowEmailBody>,
+) -> Result<StatusCode, Response> {
+    let svc = ctx.selfhost.clone().ok_or_else(disabled_response)?;
+    svc.add_allowed_email(
+        user.authorization.macro_user_id.as_ref(),
+        &body.email,
+        body.notify,
+    )
+    .await
+    .map_err(error_response)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn invite_allowed_email(
+    State(ctx): State<ApiContext>,
+    user: User,
     Json(body): Json<EmailBody>,
 ) -> Result<StatusCode, Response> {
     let svc = ctx.selfhost.clone().ok_or_else(disabled_response)?;
-    svc.add_allowed_email(user.authorization.macro_user_id.as_ref(), &body.email)
+    svc.invite_allowed_email(user.authorization.macro_user_id.as_ref(), &body.email)
+        .await
+        .map_err(error_response)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn list_invites(
+    State(ctx): State<ApiContext>,
+    user: User,
+) -> Result<Json<InvitesResponse>, Response> {
+    let svc = ctx.selfhost.clone().ok_or_else(disabled_response)?;
+    let overview = svc
+        .list_invites(user.authorization.macro_user_id.as_ref())
+        .await
+        .map_err(error_response)?;
+    Ok(Json(overview.into()))
+}
+
+async fn revoke_invite_link(
+    State(ctx): State<ApiContext>,
+    user: User,
+    Json(body): Json<TeamBody>,
+) -> Result<StatusCode, Response> {
+    let svc = ctx.selfhost.clone().ok_or_else(disabled_response)?;
+    svc.revoke_invite_link(user.authorization.macro_user_id.as_ref(), body.team_id)
+        .await
+        .map_err(error_response)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn revoke_all_invite_links(
+    State(ctx): State<ApiContext>,
+    user: User,
+) -> Result<Json<RevokedResponse>, Response> {
+    let svc = ctx.selfhost.clone().ok_or_else(disabled_response)?;
+    let revoked = svc
+        .revoke_all_invite_links(user.authorization.macro_user_id.as_ref())
+        .await
+        .map_err(error_response)?;
+    Ok(Json(RevokedResponse { revoked }))
+}
+
+async fn revoke_invite(
+    State(ctx): State<ApiContext>,
+    user: User,
+    Json(body): Json<InviteBody>,
+) -> Result<StatusCode, Response> {
+    let svc = ctx.selfhost.clone().ok_or_else(disabled_response)?;
+    svc.revoke_invite(user.authorization.macro_user_id.as_ref(), body.invite_id)
+        .await
+        .map_err(error_response)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn revoke_all_invites(
+    State(ctx): State<ApiContext>,
+    user: User,
+) -> Result<Json<RevokedResponse>, Response> {
+    let svc = ctx.selfhost.clone().ok_or_else(disabled_response)?;
+    let revoked = svc
+        .revoke_all_invites(user.authorization.macro_user_id.as_ref())
+        .await
+        .map_err(error_response)?;
+    Ok(Json(RevokedResponse { revoked }))
+}
+
+async fn resend_invite(
+    State(ctx): State<ApiContext>,
+    user: User,
+    Json(body): Json<InviteBody>,
+) -> Result<StatusCode, Response> {
+    let svc = ctx.selfhost.clone().ok_or_else(disabled_response)?;
+    svc.resend_invite(user.authorization.macro_user_id.as_ref(), body.invite_id)
         .await
         .map_err(error_response)?;
     Ok(StatusCode::NO_CONTENT)
@@ -301,6 +473,25 @@ pub(crate) fn router_if_enabled(state: &ApiContext) -> Router<ApiContext> {
             "/selfhost/admin/signups/allowed_emails/remove",
             post(remove_allowed_email),
         )
+        .route(
+            "/selfhost/admin/signups/allowed_emails/invite",
+            post(invite_allowed_email),
+        )
+        .route("/selfhost/admin/invites", get(list_invites))
+        .route(
+            "/selfhost/admin/invites/links/revoke",
+            post(revoke_invite_link),
+        )
+        .route(
+            "/selfhost/admin/invites/links/revoke_all",
+            post(revoke_all_invite_links),
+        )
+        .route("/selfhost/admin/invites/revoke", post(revoke_invite))
+        .route(
+            "/selfhost/admin/invites/revoke_all",
+            post(revoke_all_invites),
+        )
+        .route("/selfhost/admin/invites/resend", post(resend_invite))
         .route("/selfhost/admin/audit", get(list_audit))
         .route("/selfhost/admin/audit/export", get(export_audit))
 }
