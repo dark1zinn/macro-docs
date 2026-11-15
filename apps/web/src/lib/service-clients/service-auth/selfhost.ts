@@ -28,7 +28,39 @@ export type SelfHostAuditAction =
   | 'user_enabled'
   | 'signup_policy_changed'
   | 'allowed_email_added'
-  | 'allowed_email_removed';
+  | 'allowed_email_removed'
+  | 'allowed_email_invited'
+  | 'invite_link_revoked'
+  | 'team_invite_revoked'
+  | 'team_invite_resent';
+
+/** A workspace's shareable invite link. */
+export type SelfHostInviteLink = {
+  team_id: string;
+  team_name: string;
+  token: string;
+  created_at: string;
+  /** Macro user id of whoever created or last replaced it. */
+  created_by: string | null;
+};
+
+/** A workspace email invite nobody has answered yet. */
+export type SelfHostPendingInvite = {
+  invite_id: string;
+  team_id: string;
+  team_name: string;
+  email: string;
+  invited_by: string;
+  created_at: string;
+  last_sent_at: string;
+  /** Emailing it again before this time is refused. */
+  resendable_at: string;
+};
+
+export type SelfHostInvites = {
+  links: SelfHostInviteLink[];
+  invites: SelfHostPendingInvite[];
+};
 
 /** One recorded admin action. `actor` is absent for system actions. */
 export type SelfHostAuditEntry = {
@@ -114,10 +146,45 @@ export const selfHostClient = {
       `${base}/signups/policy`,
       send('PUT', { policy })
     ),
-  addAllowedEmail: (email: string) =>
+  addAllowedEmail: (email: string, notify: boolean) =>
     fetchWithToken<object, SelfHostErrorCode>(
       `${base}/signups/allowed_emails`,
+      send('POST', { email, notify })
+    ),
+  /** Emails an allowed address an invitation to sign up. */
+  inviteAllowedEmail: (email: string) =>
+    fetchWithToken<object, SelfHostErrorCode>(
+      `${base}/signups/allowed_emails/invite`,
       send('POST', { email })
+    ),
+  invites: () =>
+    fetchWithToken<SelfHostInvites, SelfHostErrorCode>(`${base}/invites`, {
+      errorResponseHandler: readError,
+    }),
+  revokeInviteLink: (teamId: string) =>
+    fetchWithToken<object, SelfHostErrorCode>(
+      `${base}/invites/links/revoke`,
+      send('POST', { team_id: teamId })
+    ),
+  revokeAllInviteLinks: () =>
+    fetchWithToken<{ revoked: number }, SelfHostErrorCode>(
+      `${base}/invites/links/revoke_all`,
+      send('POST', {})
+    ),
+  revokeInvite: (inviteId: string) =>
+    fetchWithToken<object, SelfHostErrorCode>(
+      `${base}/invites/revoke`,
+      send('POST', { invite_id: inviteId })
+    ),
+  revokeAllInvites: () =>
+    fetchWithToken<{ revoked: number }, SelfHostErrorCode>(
+      `${base}/invites/revoke_all`,
+      send('POST', {})
+    ),
+  resendInvite: (inviteId: string) =>
+    fetchWithToken<object, SelfHostErrorCode>(
+      `${base}/invites/resend`,
+      send('POST', { invite_id: inviteId })
     ),
   removeAllowedEmail: (email: string) =>
     fetchWithToken<object, SelfHostErrorCode>(

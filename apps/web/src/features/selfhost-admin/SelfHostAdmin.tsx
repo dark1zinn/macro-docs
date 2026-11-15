@@ -1,5 +1,6 @@
 import {
   useAllowedEmailMutation,
+  useSelfHostInviteActionMutation,
   useSelfHostSignupsQuery,
   useSelfHostUsersQuery,
   useSetSelfHostAdminMutation,
@@ -7,7 +8,7 @@ import {
   useSetSelfHostPolicyMutation,
 } from '@queries/auth/selfhost';
 import type { SelfHostUser } from '@service-auth/selfhost';
-import { Button, Input, ToggleSwitch } from '@ui';
+import { Button, Checkbox, Input, ToggleSwitch } from '@ui';
 import { createSignal, For, Show } from 'solid-js';
 import {
   ChoiceRow,
@@ -17,6 +18,7 @@ import {
   SettingsSection,
 } from '../settings/primitives';
 import { AuditLogSection } from './AuditLogSection';
+import { InvitesSection } from './InvitesSection';
 
 const joined = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' });
@@ -107,14 +109,16 @@ function SignupsSection() {
   const signups = useSelfHostSignupsQuery();
   const setPolicy = useSetSelfHostPolicyMutation();
   const allowedEmail = useAllowedEmailMutation();
+  const invite = useSelfHostInviteActionMutation();
   const [email, setEmail] = createSignal('');
+  const [notify, setNotify] = createSignal(true);
 
   const add = (event: SubmitEvent) => {
     event.preventDefault();
     const value = email().trim();
     if (!value) return;
     allowedEmail.mutate(
-      { email: value, remove: false },
+      { email: value, remove: false, notify: notify() },
       { onSuccess: () => setEmail('') }
     );
   };
@@ -150,7 +154,7 @@ function SignupsSection() {
           description="These addresses may create an account while sign-up is invite only."
           stackOnNarrow
         >
-          <form class="flex gap-2" onSubmit={add}>
+          <form class="flex flex-wrap items-center gap-2" onSubmit={add}>
             <Input
               type="email"
               size="sm"
@@ -158,6 +162,12 @@ function SignupsSection() {
               value={email()}
               onInput={(event) => setEmail(event.currentTarget.value)}
             />
+            <Checkbox checked={notify()} onChange={setNotify}>
+              <Checkbox.Control />
+              <Checkbox.Label class="text-sm">
+                Email an invitation
+              </Checkbox.Label>
+            </Checkbox>
             <Button
               type="submit"
               variant="secondary"
@@ -177,6 +187,19 @@ function SignupsSection() {
               <Button
                 variant="ghost"
                 size="sm"
+                disabled={invite.isPending}
+                onClick={() =>
+                  invite.mutate({
+                    kind: 'invite_allowed_email',
+                    email: entry.email,
+                  })
+                }
+              >
+                Send invite
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 disabled={allowedEmail.isPending}
                 onClick={() =>
                   allowedEmail.mutate({ email: entry.email, remove: true })
@@ -187,21 +210,22 @@ function SignupsSection() {
             </SettingsRow>
           )}
         </For>
-        <ErrorLine error={allowedEmail.error} />
+        <ErrorLine error={allowedEmail.error ?? invite.error} />
       </SettingsCard>
     </SettingsSection>
   );
 }
 
-/** Root administration of a self-hosted install: accounts, sign-up, and the audit log. */
+/** Root administration of a self-hosted install: accounts, sign-up, invites, and the audit log. */
 export function SelfHostAdmin() {
   return (
     <SettingsPage
       title="Self-host"
-      description="Manage the accounts on this server, who may sign up, and review admin actions."
+      description="Manage the accounts on this server, who may sign up and how they are invited, and review admin actions."
     >
       <UsersSection />
       <SignupsSection />
+      <InvitesSection />
       <AuditLogSection />
     </SettingsPage>
   );
