@@ -92,11 +92,11 @@ fn frontend_host(env: Environment) -> Url {
     let host = match env {
         Environment::Production => "https://macro.com".to_string(),
         Environment::Develop => "https://dev.macro.com".to_string(),
-        Environment::Local => {
-            #[expect(clippy::disallowed_methods, reason = "Only used when running locally")]
-            let port = std::env::var("FRONTEND_PORT").unwrap_or_else(|_| "3000".to_string());
-            format!("http://localhost:{port}")
-        }
+        // The app's origin as deployed: the local stack and self-hosted
+        // installs set it with OVERRIDE_APP_SERVICE_URL.
+        Environment::Local => macro_service_urls::AppServiceUrl::new_for_environment(env)
+            .expect("OVERRIDE_APP_SERVICE_URL must be a valid URL when set")
+            .to_string(),
     };
 
     Url::parse(&host).expect("all the inputs are static, valid values")
