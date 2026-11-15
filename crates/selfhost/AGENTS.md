@@ -15,15 +15,21 @@ signups. Every admin action is audited. Off unless `MACRO_SELF_HOSTED=true`.
 ## Scope
 
 - Owns: entitlement roles on account creation and startup backfill, root
-  claim, signup policy and allowlist, admin user listing, promotion, disabling,
-  the admin audit log and its CSV export (`src/export.rs`).
+  claim, signup policy and allowlist, server invitations to allowed emails,
+  the instance-wide view of workspace invite links and email invites (revoke,
+  resend), admin user listing, promotion, disabling, the admin audit log and
+  its CSV export (`src/export.rs`).
 - Not here: HTTP routes and the login/webhook hooks →
   `services/authentication_service/src/api/selfhost_admin.rs`; schema →
-  `crates/macro_db_client/migrations/*_selfhost_*.sql`.
+  `crates/macro_db_client/migrations/*_selfhost_*.sql`; workspace invite rules
+  and emails → `crates/teams`.
 
 ## Boundaries
 
-- Depends on: `roles_and_permissions` (role grants), `fusionauth` (deactivate/reactivate), MacroDB.
+- Depends on: `roles_and_permissions` (role grants), `fusionauth`
+  (deactivate/reactivate), `teams` and `entity_access` (workspace invites),
+  `referral` (the "join Macro" email), MacroDB. Upstream crates are used
+  through their `ports` features only.
 - Used by: `authentication_service` only.
 
 ## Checks
@@ -42,3 +48,7 @@ signups. Every admin action is audited. Off unless `MACRO_SELF_HOSTED=true`.
   action needs an `AuditAction` variant and a domain test that it is recorded.
 - `selfhost_audit_log` is append-only by trigger: no deletes, and a row only
   moves once from `pending` to its outcome.
+- Workspace changes go through the teams service, never raw SQL:
+  `outbound/teams.rs` issues a workspace-admin `EntityAccessReceipt` naming
+  the instance admin, only after the domain confirmed that role. Reads of every
+  workspace's links and invites query MacroDB directly.
