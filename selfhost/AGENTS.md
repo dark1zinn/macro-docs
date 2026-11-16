@@ -52,6 +52,10 @@ backend lives in `crates/selfhost`; the web reads `SELF_HOSTED` from
 - `Production`/`Develop` hardcode macro.com hosts; self-host must stay `local`.
 - A secret set in compose `environment` silently wins over the generated one.
 - Coolify applies every `${VAR:?}` regardless of profile: only core settings may be required.
+- Coolify parses `environment:` values itself and only splits `${VAR}`, `:-`, `-`, `:?`
+  and `?`: anything else (such as `${VAR:+text}`) becomes an invalid variable name and
+  the deploy fails. Put conditional expansions in `command:`, which it does not parse
+  (drift test `compose_env_parses_in_coolify`).
 - Floci accepts unsigned requests; the gateway's `/local-storage` allowlist is the only guard.
 - This is a fork that merges upstream: keep self-host logic in new files and
   only short hooks in upstream code (`authentication_service` login/webhook

@@ -118,6 +118,114 @@ fn compose_env_keeps_analytics_off() {
     );
 }
 
+/// The variable names Coolify reads from a compose `environment:` value. Its
+/// parser takes each `${...}` (outside `$${`), ends the name at the first
+/// `:-`, `-`, `:?` or `?` outside nested braces, and also reads the
+/// references nested in the default (`splitOnOperatorOutsideNested` in
+/// Coolify's `bootstrap/helpers/services.php`).
+fn coolify_variable_names(value: &str) -> Vec<String> {
+    const OPERATORS: [&str; 4] = [":-", "-", ":?", "?"];
+    let bytes = value.as_bytes();
+    let mut names = Vec::new();
+    let mut i = 0;
+    while let Some(offset) = value[i..].find("${") {
+        let start = i + offset;
+        if start > 0 && bytes[start - 1] == b'$' {
+            i = start + 2;
+            continue;
+        }
+        let mut depth = 0;
+        let mut end = None;
+        for (j, byte) in bytes.iter().enumerate().skip(start + 1) {
+            match byte {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(j);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(end) = end else { break };
+        let content = &value[start + 2..end];
+        let mut depth = 0;
+        let mut split = None;
+        'scan: for (j, byte) in content.bytes().enumerate() {
+            match byte {
+                b'{' => depth += 1,
+                b'}' => depth -= 1,
+                _ if depth == 0 => {
+                    for op in OPERATORS {
+                        if content[j..].starts_with(op) {
+                            split = Some((j, op.len()));
+                            break 'scan;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        match split {
+            Some((at, len)) => {
+                names.push(content[..at].to_owned());
+                names.extend(coolify_variable_names(&content[at + len..]));
+            }
+            None => names.push(content.to_owned()),
+        }
+        i = end + 1;
+    }
+    names
+}
+
+#[test]
+fn coolify_reads_conditional_expansions_as_names() {
+    assert_eq!(
+        coolify_variable_names("${A:-x}${B:+on,}$${C}"),
+        ["A", "B:+on,"]
+    );
+    assert_eq!(coolify_variable_names("${A:-${B}/x}"), ["A", "B"]);
+}
+
+/// Coolify stores every variable an `environment:` value references and
+/// refuses a deployment whose names are not identifiers, so values may only
+/// use expansions it can split (`${VAR}`, `:-`, `-`, `:?`, `?`). Conditional
+/// forms such as `${VAR:+text}` belong in `command:`, which it does not parse.
+#[test]
+fn compose_env_parses_in_coolify() {
+    let compose = compose();
+    let identifier = |name: &str| {
+        let mut chars = name.chars();
+        chars
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+    };
+    let mut bad = Vec::new();
+    for (service, definition) in compose["services"].as_mapping().unwrap() {
+        for (key, value) in definition["environment"].as_mapping().into_iter().flatten() {
+            let Some(value) = value.as_str() else {
+                continue;
+            };
+            for name in coolify_variable_names(value) {
+                if !identifier(&name) {
+                    bad.push(format!(
+                        "{}.{}: {name:?}",
+                        service.as_str().unwrap(),
+                        key.as_str().unwrap()
+                    ));
+                }
+            }
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "Coolify can't parse these references: {bad:?}"
+    );
+}
+
 /// The loader never overrides a set variable, so a secret named in compose
 /// would silently replace the generated one.
 #[test]
