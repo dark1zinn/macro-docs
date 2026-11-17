@@ -70,6 +70,7 @@ use crate::domain::{
     team_repo::TeamRepository,
 };
 
+mod crm_member_access;
 mod delete_team;
 mod invite_link;
 mod team_agent;
@@ -103,6 +104,9 @@ struct MockTeamRepository {
     team_members: Vec<TeamMember<'static>>,
     accepted_invite: Option<AcceptedTeamInvite<'static>>,
     removed_member: Option<TeamMember<'static>>,
+    removed_member_crm_access: bool,
+    crm_access_changes: Arc<Mutex<Vec<(uuid::Uuid, String, String, bool)>>>,
+    rolled_back_crm_access: Arc<Mutex<Vec<bool>>>,
     rollback_accept_calls: Arc<Mutex<usize>>,
     rollback_remove_calls: Arc<Mutex<usize>>,
     fail_rollback_accept: bool,
@@ -192,6 +196,9 @@ impl MockTeamRepository {
             team_members: Vec::new(),
             accepted_invite: None,
             removed_member: None,
+            removed_member_crm_access: true,
+            crm_access_changes: Arc::new(Mutex::new(Vec::new())),
+            rolled_back_crm_access: Arc::new(Mutex::new(Vec::new())),
             rollback_accept_calls: Arc::new(Mutex::new(0)),
             rollback_remove_calls: Arc::new(Mutex::new(0)),
             fail_rollback_accept: false,
@@ -285,6 +292,22 @@ impl MockTeamRepository {
 }
 
 impl TeamRepository for MockTeamRepository {
+    async fn set_member_crm_access(
+        &self,
+        team_id: uuid::Uuid,
+        actor: &MacroUserIdStr<'_>,
+        target: &MacroUserIdStr<'_>,
+        enabled: bool,
+    ) -> Result<(), TeamError> {
+        self.crm_access_changes.lock().unwrap().push((
+            team_id,
+            actor.to_string(),
+            target.to_string(),
+            enabled,
+        ));
+        Ok(())
+    }
+
     fn is_seat_included(
         &self,
         _: &uuid::Uuid,
@@ -507,10 +530,12 @@ impl TeamRepository for MockTeamRepository {
         &self,
         _: &uuid::Uuid,
         _: &MacroUserIdStr<'_>,
-    ) -> impl Future<Output = Result<TeamMember<'static>, RemoveUserFromTeamError>> + Send {
+    ) -> impl Future<Output = Result<RemovedTeamMember<'static>, RemoveUserFromTeamError>> + Send
+    {
         *self.remove_user_calls.lock().unwrap() += 1;
         let reject_owner = self.reject_owner;
         let mut removed_member = self.removed_member.clone();
+        let crm_access = self.removed_member_crm_access;
         if let Some(member) = removed_member.as_mut()
             && let Some((_, _, plan)) = self
                 .patch_team_member_plan_calls
@@ -526,7 +551,9 @@ impl TeamRepository for MockTeamRepository {
             if reject_owner {
                 Err(RemoveUserFromTeamError::CannotRemoveOwner)
             } else {
-                removed_member.ok_or(RemoveUserFromTeamError::UserNotInTeam)
+                removed_member
+                    .map(|member| RemovedTeamMember { member, crm_access })
+                    .ok_or(RemoveUserFromTeamError::UserNotInTeam)
             }
         }
     }
@@ -654,10 +681,14 @@ impl TeamRepository for MockTeamRepository {
 
     fn rollback_remove_user_from_team(
         &self,
-        _: &TeamMember<'_>,
+        removed_member: &RemovedTeamMember<'_>,
         seat_included: bool,
     ) -> impl Future<Output = Result<(), TeamError>> + Send {
         *self.rollback_remove_calls.lock().unwrap() += 1;
+        self.rolled_back_crm_access
+            .lock()
+            .unwrap()
+            .push(removed_member.crm_access);
         self.rolled_back_seat_included
             .lock()
             .unwrap()
@@ -719,6 +750,7 @@ impl TeamRepository for MockTeamRepository {
         async move {
             let team = team.ok_or(TeamError::TeamDoesNotExist)?;
             Ok(TeamWithMembers {
+                crm_member_access: HashMap::new(),
                 team,
                 members,
                 scheduled_seat_plans: None,
@@ -4606,6 +4638,7 @@ async fn test_patch_team_rejects_owner_role_assignment() {
     let (service, role_calls, name_calls) = build_service_with_team(team);
 
     let req = PatchTeamRequest {
+        member_crm_access: None,
         name: Some("New Name".to_string()),
         slug: Some("new-team".to_string()),
         user_role_updates: Some(vec![PatchTeamUserRole {
@@ -4647,6 +4680,7 @@ async fn test_patch_team_rejects_owner_downgrade() {
     let (service, role_calls, name_calls) = build_service_with_team(team);
 
     let req = PatchTeamRequest {
+        member_crm_access: None,
         name: None,
         slug: None,
         user_role_updates: Some(vec![PatchTeamUserRole {
@@ -4689,6 +4723,7 @@ async fn test_patch_team_applies_role_updates_and_name() {
     let (service, role_calls, name_calls) = build_service_with_team(team);
 
     let req = PatchTeamRequest {
+        member_crm_access: None,
         name: Some("New Name".to_string()),
         slug: Some("new-team slug".to_string()),
         user_role_updates: Some(vec![
@@ -4750,6 +4785,7 @@ async fn test_patch_team_empty_role_updates() {
     let (service, role_calls, name_calls) = build_service_with_team(team);
 
     let req = PatchTeamRequest {
+        member_crm_access: None,
         name: Some("New Name".to_string()),
         slug: None,
         user_role_updates: Some(Vec::new()),
@@ -4776,6 +4812,7 @@ async fn test_patch_team_metadata_publishes_updated_with_omitted_fields() {
         broker.clone(),
     );
     let request = PatchTeamRequest {
+        member_crm_access: None,
         name: Some("Renamed".to_string()),
         slug: None,
         user_role_updates: None,
@@ -4818,6 +4855,7 @@ async fn test_patch_team_role_only_publishes_previous_role_without_updated_event
     let broker = RecordingEventBroker::default();
     let service = build_service_with_repo_and_broker(repo, broker.clone());
     let request = PatchTeamRequest {
+        member_crm_access: None,
         name: None,
         slug: None,
         user_role_updates: Some(vec![PatchTeamUserRole {
@@ -4868,6 +4906,7 @@ async fn test_patch_team_partial_role_failure_keeps_ordered_success_events() {
     let broker = RecordingEventBroker::default();
     let service = build_service_with_repo_and_broker(repo, broker.clone());
     let request = PatchTeamRequest {
+        member_crm_access: None,
         name: None,
         slug: None,
         user_role_updates: Some(vec![
@@ -4908,6 +4947,7 @@ async fn test_patch_team_repository_failure_does_not_publish_updated() {
     let broker = RecordingEventBroker::default();
     let service = build_service_with_repo_and_broker(repo, broker.clone());
     let request = PatchTeamRequest {
+        member_crm_access: None,
         name: Some("Renamed".to_string()),
         slug: None,
         user_role_updates: None,
@@ -6181,6 +6221,8 @@ async fn remove_user_from_team_restores_snapshotted_roles_when_release_fails() {
     });
     team_repo.team_subscription_id = Some(subscription_id.clone());
     let rollback_remove_calls = team_repo.rollback_remove_calls.clone();
+    team_repo.removed_member_crm_access = false;
+    let rolled_back_crm_access = team_repo.rolled_back_crm_access.clone();
 
     let customer_repo = MockCustomerRepository {
         subscription_id: subscription_id.clone(),
@@ -6258,6 +6300,7 @@ async fn remove_user_from_team_restores_snapshotted_roles_when_release_fails() {
         vec![(subscription_id.to_string(), 1)]
     );
     assert_eq!(*rollback_remove_calls.lock().unwrap(), 1);
+    assert_eq!(*rolled_back_crm_access.lock().unwrap(), vec![false]);
     assert!(event_broker.events().is_empty());
 }
 
@@ -6279,6 +6322,8 @@ async fn remove_user_from_team_does_not_release_seat_when_role_removal_fails() {
     });
     team_repo.team_subscription_id = Some(subscription_id.clone());
     let rollback_remove_calls = team_repo.rollback_remove_calls.clone();
+    team_repo.removed_member_crm_access = false;
+    let rolled_back_crm_access = team_repo.rolled_back_crm_access.clone();
 
     let customer_repo = MockCustomerRepository {
         subscription_id: subscription_id.clone(),
@@ -6342,6 +6387,7 @@ async fn remove_user_from_team_does_not_release_seat_when_role_removal_fails() {
         vec![(subscription_id.to_string(), 1)]
     );
     assert_eq!(*rollback_remove_calls.lock().unwrap(), 1);
+    assert_eq!(*rolled_back_crm_access.lock().unwrap(), vec![false]);
     assert!(event_broker.events().is_empty());
 }
 
@@ -6623,6 +6669,8 @@ async fn test_remove_user_from_team_rolls_back_remove_when_customer_decrement_fa
     });
     team_repo.team_subscription_id = Some(subscription_id.clone());
     let rollback_remove_calls = team_repo.rollback_remove_calls.clone();
+    team_repo.removed_member_crm_access = false;
+    let rolled_back_crm_access = team_repo.rolled_back_crm_access.clone();
 
     let customer_repo = MockCustomerRepository {
         subscription_id: subscription_id.clone(),
@@ -6660,6 +6708,7 @@ async fn test_remove_user_from_team_rolls_back_remove_when_customer_decrement_fa
         vec![(subscription_id.to_string(), 1)]
     );
     assert_eq!(*rollback_remove_calls.lock().unwrap(), 1);
+    assert_eq!(*rolled_back_crm_access.lock().unwrap(), vec![false]);
     assert!(remove_channel_calls.lock().unwrap().is_empty());
     assert!(remove_role_calls.lock().unwrap().is_empty());
 }
@@ -6768,6 +6817,8 @@ async fn test_remove_user_from_team_rolls_back_customer_and_remove_when_channel_
     });
     team_repo.team_subscription_id = Some(subscription_id.clone());
     let rollback_remove_calls = team_repo.rollback_remove_calls.clone();
+    team_repo.removed_member_crm_access = false;
+    let rolled_back_crm_access = team_repo.rolled_back_crm_access.clone();
 
     let customer_repo = MockCustomerRepository {
         subscription_id: subscription_id.clone(),
@@ -6811,6 +6862,7 @@ async fn test_remove_user_from_team_rolls_back_customer_and_remove_when_channel_
         vec![(subscription_id.to_string(), 1)]
     );
     assert_eq!(*rollback_remove_calls.lock().unwrap(), 1);
+    assert_eq!(*rolled_back_crm_access.lock().unwrap(), vec![false]);
     assert!(remove_role_calls.lock().unwrap().is_empty());
 }
 

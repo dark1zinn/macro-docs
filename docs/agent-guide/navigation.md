@@ -552,12 +552,10 @@ unread dot follows Home's unread dot.
 External (plug icon, `g x`) appears on the rail only with the
 `enable-whatsapp-linked` flag; it starts shown and can be hidden like other apps.
 
-- Top: buttons `Create` and `Search`. Clicking `Search` opens a menu
-  with `Command Menu` (⌘K on Mac / Ctrl+K elsewhere) and `Search everything`
-  (`/`). Choose the first to open commands, or the second to open and focus
-  global search. Hold Shift while selecting `Search everything` to open it in a
-  new split, including when Search is already active. This left-click menu shares
-  its surface and item styling with the sidebar right-click menus.
+- Top: buttons `Create` and `Search`. Clicking `Search` (or `/`) opens and
+  focuses global search with an empty query and no rows; Shift+click opens it in
+  a new split, including when Search is already active. The command menu stays
+  on ⌘K (Ctrl+K elsewhere).
 - Nav: `Home`, `Notifications`, `Drive`, `Email`, `Chat`, `Tasks`, `Calendar`,
   `Agents`, `Customers`. Notifications, Calendar and Customers appear only when
   their features are enabled. Calendar shows a next-meeting badge (`Now`, or
@@ -618,7 +616,7 @@ use the standard 400 ms hover delay and 300 ms grace period between items. Home,
 Email, and Chat show a small accent dot when the loaded data contains an unread
 item. Home uses Signal; Email uses Important across all linked inboxes.
 Noise does not light either dot. These are presence indicators, not counts; they
-do not fetch additional pages to find every unread item. With GraphQL enabled,
+do not fetch additional pages to find every unread item.
 Home uses `HomeUnreadPresence` over its existing 100-item Signal/unread candidate
 page, with one state-only notification witness per entity (plus one reminder
 witness for email). It must not fetch full notification history just to draw the
@@ -626,8 +624,10 @@ dot. Channel/thread scoping happens before the witness limit; seen thread reason
 still affect that scoping. Reading or completing a witness refreshes the bounded
 edge so an older unread item can keep the dot lit. These witnesses must never be
 used as the complete mark-read/done input. The experimental notification-time
-sort remains on its existing REST path; disabling GraphQL or enabling that sort
-must not construct an unsupported GraphQL input or blank the app shell.
+sort is REST-only and does not move the dot: the dot keeps the updated-at
+`HomeUnreadPresence` page whatever Home's list sorts by, and never reads the REST
+list or the notification feed. Neither may construct an unsupported GraphQL
+input or blank the app shell.
 Cold offline launch must retain navigation even while notification preferences
 or badge queries are pending. Unknown preferences use the default enabled
 behavior; loaded disabled preferences still suppress Email's dot, including
@@ -697,6 +697,28 @@ Agents. Click it to reveal the search field between the title and New, at the
 same height as the New button; click again to hide it. The field focuses when
 opened. Every other view searches from the expandable Search icon in its list
 header.
+That header field hands the keyboard to the results: `ArrowDown` or `Enter`
+moves to the first row, where `j`/`k` and the arrows continue, and `Escape`
+leaves the field with the search still on screen. `Escape` in the list then
+steps back one level at a time: it clears a selection first, then the search.
+`Cmd/Ctrl+F` returns to the field with the query selected;
+only the field's X clears from inside it. An empty field collapses on `Escape`.
+Check it in Email, Tasks, Drive, and Projects, which land on the first row and
+scroll it into view; a list without the shared list keys keeps the row it was
+on. Where the view has no keyboard list on screen (Passwords, the booking
+lists, Routines' Discover tab), or the search found no rows, `ArrowDown` and
+`Enter` stay in the field, so typing goes on. A list that empties while its
+search loads counts as having no rows until they arrive. `Enter` on one of Email's recent
+searches still moves to the list, which lands on the first row once that
+search's rows arrive.
+Home's and Chat's sidebar search fields follow the same rules, landing on the
+first matching row of the sidebar list; emptying the field from the list
+collapses it back to the Search icon. An `Escape` pressed in the preview or
+conversation beside the sidebar leaves the search alone. Home's field stays
+open while its query filters the list, including after the sidebar remounts
+(a window narrowed and widened again), and its Search icon then closes the
+field and clears the query, as the field's X does in a list header. Agents' sidebar field does not yet: its
+conversation list has no keyboard navigation.
 Mobile creation controls, search controls, and placement are unchanged.
 When multiple desktop splits are open, a **Close** (X) button appears in the
 sidebar title bar and closes that split, including
@@ -1633,6 +1655,20 @@ use the same paged personal directory. Channel people remain participant-scoped,
 and CRM discussions remain team-scoped; an empty or loading roster never opens
 personal-directory search. Available agents are added to the current window or
 scope with the existing rollout rules. Group mentions remain channel-only.
+Within a scoped people list, an exact full-name or first-name match comes before
+prefixes, literal contains matches, and scattered-letter matches. Recent interaction
+history only orders people within those name tiers. Phones choose their two pinned
+people after this ranking. To verify, search for a person's first name when that
+person has no interaction history and other recently contacted participants match
+only scattered letters: the named person must lead and be selected by Enter or tap.
+The controlled composer regression is `people-ranking.browser.e2e.ts` in
+`apps/web/src/features/channel/Input/browser-test/`.
+People rows follow the assignee menus' rule (`@core/user/people-before-agents`):
+browsing lists you, then other people, then agents with Macro first; while
+searching, an agent is listed only when its name or handle holds the typed words,
+not just their letters scattered, and never above a person whose name matches as
+well; bots get no score boost. Phone rows keep that People order in the slots the
+blended ranking gives people.
 
 Counts describe loaded results, not the full server corpus. Scans through
 incomplete or already-visible cache hits are bounded per action; continue
@@ -1779,7 +1815,7 @@ restart rules still apply.
   would describe the menu. A view's `g` letters are listed under that view.
 - `c` then `d`/`t`/`e`/`m`/`a` — create doc / task / email / channel / AI chat.
   Single-letter shortcuts only work when no editor has focus; press `Escape` first.
-- `/` — search everything (in Email it focuses email search). `j`/`k` — move in
+- `/` — search everything, from every view including Email. `j`/`k` — move in
   lists. `e` — mark done.
   After opening a list item in the same split, `j`/`k` continue through the
   originating list; native detail paging can still load its next page. Check
@@ -1883,7 +1919,7 @@ share one right-click menu, and the mobile long-press drawer shows the same
 items. It offers an item only where its action works for the row's type:
 Rename for documents, chats, folders, calls, agent sessions, and channels you
 take part in (not DMs); Duplicate for
-documents, chats, and folders (with GraphQL Soup); Move to folder for documents, chats, folders, and email you own (a folder is
+documents, chats, and folders; Move to folder for documents, chats, folders, and email you own (a folder is
 one location shared by everyone, and its sharing passes to what it holds, so
 only the owner moves an item; the server enforces the same);
 Delete for email and owned documents, chats, folders, calls, agent sessions, and

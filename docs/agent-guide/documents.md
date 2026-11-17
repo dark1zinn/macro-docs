@@ -128,7 +128,7 @@ and Project when enabled. Defaults apply only without a saved pin list; customiz
 pins stay unchanged. Changing pins keeps the other defaults unless explicitly unpinned.
 
 Markdown code blocks have a **Copy Code** button in both editable and read-only
-views. Successful copies briefly animate the icon to a solid green check-circle;
+views. Successful copies briefly blur and fade the icon to a plain green check;
 they do not show a success toast.
 
 Embedded code files, canvases, and PDFs in Markdown documents show their content
@@ -2434,8 +2434,9 @@ and agent chat links also convert to their respective entity mentions.
 Pasting a bare GitHub pull request URL (`github.com/<owner>/<repo>/pull/<n>`,
 including subpages such as `/files`) inserts a link that becomes a PR mention
 once Macro finds the synced PR, usually within a moment. Hovering the mention
-shows its status, diff size, comments, and checks; clicking opens the PR in a
-split. A PR mention always stays on one line: a long title truncates with an
+shows its status, diff size, comments, and checks; clicking opens the PR on
+GitHub (a new tab, or the system browser in the desktop app). A PR mention
+always stays on one line: a long title truncates with an
 ellipsis before the `#N`, so read the full title from the hover card. In a sent
 message, a mention an agent wrote by URL alone shows `owner/repo#N` until its
 title loads and keeps the same width either way. A PR Macro has not synced
@@ -2540,8 +2541,7 @@ exclude CRM records. On mobile, the single list includes both CRM record types, 
 Macro people and groups are pinned. The PostHog `disable-crm-contact-search`
 kill switch removes contact results and disables their search while leaving
 companies and Macro users available; existing contact mentions still work.
-Override locally with `VITE_DISABLE_CRM_CONTACT_SEARCH=true`. With
-`ENABLE_GRAPHQL_SOUP` enabled, results include cached companies even if they are
+Override locally with `VITE_DISABLE_CRM_CONTACT_SEARCH=true`. Results include cached companies even if they are
 absent from the first 500 companies in the REST Quick Access feed; the REST feed
 remains a fallback. Cache search covers synchronized companies, not the entire CRM.
 
@@ -2695,7 +2695,7 @@ detail reads answer non-owners 401/403 for a missing item too, so a deleted
 database or form reads `No Access` to anyone but its owner. A reference made in
 the last minute whose item hasn't reached the preview yet still opens it.
 
-With `ENABLE_GRAPHQL_SOUP` enabled, the popup reuses the reference's live `ItemPreviews`
+The popup reuses the reference's live `ItemPreviews`
 batch, including task properties and viewer permission, without another fetch.
 Explicit refreshes may revalidate that batch, but requests must settle while the
 pointer stays over the same reference; cache updates must not cause a continuous
@@ -3133,9 +3133,16 @@ Right side of a doc (toggle with `Hide/Show Side Panel`):
   Files-view title menu (three dots beside the breadcrumb) also lists `Copy as
   prompt` directly above `Download` for plain documents.
 - `Details` → Owner, Created, Last updated.
-- `Tags` → `Add tags` (dialog). Click a tag's label to toggle and save; Shift-click
-  keeps the picker open for multiple selections. Reopen it to remove a tag.
-  With GraphQL Soup enabled, applying the first tag refetches only that entity's
+- `Tags` → `Add tags` opens the picker. On desktop, clicking a checkbox or pressing
+  Enter/Space while it is focused toggles that tag and keeps the picker open;
+  clicking its label toggles and saves all staged selections, then closes.
+  Shift-click and Shift+Enter also keep it open. Mobile retains Done.
+  In a More-menu submenu, a row pick or Escape closes only the tag picker and
+  leaves the parent menu available for another action.
+  During tag creation, the compact Back/title row shows the draft color beside
+  the heading. Back and Escape return from sharing to color, then to the name
+  search, preserving the name and chosen color.
+  Applying the first tag refetches only that entity's
   properties; later edits update the existing assignment optimistically. Verify
   both the side panel and list-row chip, then reload to confirm persistence.
   This must also work after background backfills populate more than 128 cached

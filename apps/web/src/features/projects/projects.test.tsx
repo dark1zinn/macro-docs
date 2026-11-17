@@ -1,4 +1,4 @@
-import { cleanup, render } from '@solidjs/testing-library';
+import { cleanup, fireEvent, render } from '@solidjs/testing-library';
 import { QueryClient } from '@tanstack/solid-query';
 import {
   type Client,
@@ -17,6 +17,7 @@ import {
 } from 'solid-js';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 import { filter, fromPromise, mergeMap, pipe } from 'wonka';
+import type { EntityData } from '../entity/types/entity';
 
 const mocks = vi.hoisted(() => ({
   enabled: (): boolean => false,
@@ -24,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   soup: vi.fn(),
   graphql: undefined as Client | undefined,
   get: vi.fn(),
+  changeIcon: vi.fn(),
 }));
 vi.mock('@app/lib/analytics/posthog', () => ({
   useFeatureFlag: () => createMemo(() => ({ enabled: mocks.enabled() })),
@@ -57,6 +59,12 @@ vi.mock('./views/project-assignment', () => ({}));
 vi.mock('./views/projects-collection', () => ({}));
 vi.mock('../entity-appearance/entity-appearance', () => ({
   useChangeEntityIcon: () => vi.fn(),
+  EntityAppearanceTrigger: (props: { entity: EntityData }) => (
+    <button
+      aria-label="Change icon"
+      onClick={() => mocks.changeIcon(props.entity)}
+    />
+  ),
 }));
 vi.mock('@app/features/tasks-view/tasks-create-action', () => ({
   TasksCreateAction: () => null,
@@ -154,7 +162,7 @@ function setupGraphql() {
           ...(['Initiative', 'InitiativeIdentity'].includes(
             getOperationName(operation.query) ?? ''
           )
-            ? { initiative: requestedProject }
+            ? { visibleInitiative: requestedProject }
             : { soup: { nextCursor: 'next', items: [initiative] } }),
         },
       },
@@ -268,10 +276,20 @@ it("names a route's project without the project's full read", async () => {
     />
   ));
   await vi.waitFor(() =>
-    expect(view.getByRole('button').textContent).toBe('Launch')
+    expect(view.getByRole('button', { name: 'Launch' }).textContent).toBe(
+      'Launch'
+    )
   );
   expect(callsFor('Initiative')).toHaveLength(0);
   expect(callsFor('InitiativeIdentity')).toHaveLength(1);
+  fireEvent.click(view.getByRole('button', { name: 'Change icon' }));
+  expect(mocks.changeIcon).toHaveBeenCalledWith({
+    type: 'initiative',
+    id: 'launch',
+    name: 'Launch',
+    ownerId: 'viewer',
+    appearance: null,
+  });
 });
 
 it('keeps standalone source adapters enabled when no rollout gate is injected', async () => {
@@ -319,6 +337,7 @@ it('reads chip identity without the fields that check every task', async () => {
     expect(query.data).toEqual({
       id: 'launch',
       name: 'Launch',
+      ownerId: 'viewer',
       access: 'owner',
       appearance: null,
     })
@@ -379,7 +398,12 @@ it('reuses cached chip identities when virtual rows remount but still fetches mi
 function controlledClient() {
   const requests: {
     operation: Operation;
-    next: (data?: unknown, error?: CombinedError, cached?: boolean) => void;
+    next: (
+      data?: unknown,
+      error?: CombinedError,
+      cached?: boolean,
+      stale?: boolean
+    ) => void;
   }[] = [];
   const exchange: Exchange = () => (source) =>
     pipe(
@@ -389,12 +413,12 @@ function controlledClient() {
         const subject = makeSubject<OperationResult>();
         requests.push({
           operation,
-          next: (data, error, cached = false) =>
+          next: (data, error, cached = false, stale = false) =>
             subject.next({
               operation,
               data,
               error,
-              stale: false,
+              stale,
               hasNext: false,
               ...(cached
                 ? {
@@ -519,23 +543,135 @@ it('settles a project the server cannot load as an error without data', () => {
       ),
     };
   });
-  const notFound = new CombinedError({
+  // The server omits an errored field next to its error instead of nulling it.
+  const failed = new CombinedError({
     graphQLErrors: [
       {
-        message: 'initiative not found',
-        path: ['user', 'initiative'],
-        extensions: { code: 'NOT_FOUND' },
+        message: 'internal server error',
+        path: ['user', 'visibleInitiative'],
+        extensions: { code: 'INTERNAL_SERVER_ERROR' },
       },
     ],
   });
   expect(requests).toHaveLength(2);
   for (const request of requests)
-    request.next({ user: { id: 'viewer' } }, notFound);
+    request.next({ user: { id: 'viewer' } }, failed);
   for (const query of [reads.identity, reads.detail]) {
     expect(query.data).toBeUndefined();
     expect(query.isPending).toBe(false);
     expect(query.isError).toBe(true);
   }
+});
+
+it('settles a project the server answers as missing without asking again', () => {
+  const { client, requests } = controlledClient();
+  const reads = createRoot((dispose) => {
+    disposeSource = dispose;
+    return {
+      identity: createProjectIdentityQuery(
+        () => client,
+        () => 'viewer',
+        () => 'deleted'
+      ),
+      detail: createProjectDetailQuery(
+        () => client,
+        () => 'viewer',
+        () => 'deleted'
+      ),
+    };
+  });
+  expect(requests).toHaveLength(2);
+  for (const request of requests)
+    request.next({ user: { id: 'viewer', visibleInitiative: null } });
+  for (const query of [reads.identity, reads.detail]) {
+    expect(query.data).toBeUndefined();
+    expect(query.isPending).toBe(false);
+    expect(query.isError).toBe(false);
+  }
+  expect(requests).toHaveLength(2);
+});
+
+it('asks the server again before showing a cached missing project, so one shared since appears', async () => {
+  setupGraphql();
+  const data = (
+    await mocks.soup({
+      query: (
+        await import('@service-storage/graphql/generated/graphql')
+      ).InitiativeIdentityDocument,
+    })
+  ).data;
+  const { client, requests } = controlledClient();
+  const query = createRoot((dispose) => {
+    disposeSource = dispose;
+    return createProjectIdentityQuery(
+      () => client,
+      () => 'viewer',
+      () => 'launch'
+    );
+  });
+  requests[0].next(
+    { user: { id: 'viewer', visibleInitiative: null } },
+    undefined,
+    true
+  );
+  expect(query.data).toBeUndefined();
+  expect(query.isPending).toBe(true);
+  await vi.waitFor(() => expect(requests).toHaveLength(2));
+  expect(requests[1].operation.context.requestPolicy).toBe('network-only');
+  requests[1].next(data);
+  expect(query.isPending).toBe(false);
+  expect(query.data?.name).toBe('Launch');
+});
+
+it('shows a cached missing project as missing when asking the server fails', async () => {
+  const { client, requests } = controlledClient();
+  const query = createRoot((dispose) => {
+    disposeSource = dispose;
+    return createProjectIdentityQuery(
+      () => client,
+      () => 'viewer',
+      () => 'deleted'
+    );
+  });
+  requests[0].next(
+    { user: { id: 'viewer', visibleInitiative: null } },
+    undefined,
+    true
+  );
+  await vi.waitFor(() => expect(requests).toHaveLength(2));
+  requests[1].next(
+    undefined,
+    new CombinedError({ networkError: new Error('Offline') })
+  );
+  await vi.waitFor(() => expect(query.isPending).toBe(false));
+  expect(requests).toHaveLength(2);
+});
+
+it('waits for the in-flight network read instead of asking again for a cached missing project', async () => {
+  const { client, requests } = controlledClient();
+  const query = createRoot((dispose) => {
+    disposeSource = dispose;
+    return createProjectDetailQuery(
+      () => client,
+      () => 'viewer',
+      () => 'deleted'
+    );
+  });
+  // cache-and-network: the cached null arrives stale, with the network read
+  // still in flight.
+  requests[0].next(
+    { user: { id: 'viewer', visibleInitiative: null } },
+    undefined,
+    true,
+    true
+  );
+  expect(query.isPending).toBe(true);
+  await Promise.resolve();
+  expect(requests).toHaveLength(1);
+  requests[0].next({ user: { id: 'viewer', visibleInitiative: null } });
+  expect(query.isPending).toBe(false);
+  expect(query.data).toBeUndefined();
+  expect(requests).toHaveLength(1);
 });
 
 it('reauthorizes a denied identity after remount without exposing cached data', async () => {
