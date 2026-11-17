@@ -366,6 +366,16 @@ impl SelfHostRepo for Fake {
         let state = self.0.lock().unwrap();
         Ok(state.allowed.iter().any(|e| e == email) || state.invites.iter().any(|e| e == email))
     }
+
+    async fn invite_link_exists(&self, token: Uuid) -> anyhow::Result<bool> {
+        Ok(self
+            .0
+            .lock()
+            .unwrap()
+            .links
+            .iter()
+            .any(|l| l.token == token))
+    }
 }
 
 #[async_trait]
@@ -632,7 +642,11 @@ async fn signup_is_open_before_root_exists() {
     f.set_policy(SignupPolicy::InviteOnly);
     let svc = service(&f);
 
-    assert!(svc.authorize_signup("anyone@example.com").await.unwrap());
+    assert!(
+        svc.authorize_signup("anyone@example.com", None)
+            .await
+            .unwrap()
+    );
 }
 
 #[tokio::test]
@@ -641,7 +655,11 @@ async fn invite_only_denies_unlisted_email_after_root() {
     f.grant("root@example.com", RoleId::SuperAdmin);
     let svc = service(&f);
 
-    assert!(!svc.authorize_signup("stranger@example.com").await.unwrap());
+    assert!(
+        !svc.authorize_signup("stranger@example.com", None)
+            .await
+            .unwrap()
+    );
 }
 
 #[tokio::test]
@@ -654,8 +672,16 @@ async fn invite_only_allows_allowlisted_and_invited_email_case_insensitively() {
         .await
         .unwrap();
 
-    assert!(svc.authorize_signup("LISTED@example.com").await.unwrap());
-    assert!(svc.authorize_signup("INVITED@example.com").await.unwrap());
+    assert!(
+        svc.authorize_signup("LISTED@example.com", None)
+            .await
+            .unwrap()
+    );
+    assert!(
+        svc.authorize_signup("INVITED@example.com", None)
+            .await
+            .unwrap()
+    );
 }
 
 #[tokio::test]
@@ -665,7 +691,48 @@ async fn open_policy_allows_any_email_after_root() {
     f.set_policy(SignupPolicy::Open);
     let svc = service(&f);
 
-    assert!(svc.authorize_signup("stranger@example.com").await.unwrap());
+    assert!(
+        svc.authorize_signup("stranger@example.com", None)
+            .await
+            .unwrap()
+    );
+}
+
+/// A workspace's current invite link lets anyone sign up on an invite-only
+/// server; a revoked, unknown or malformed link does not.
+#[tokio::test]
+async fn invite_only_allows_signup_through_a_current_invite_link() {
+    let f = Fake::with_users(&[("fa-1", "root@example.com")]);
+    f.grant("root@example.com", RoleId::SuperAdmin);
+    f.0.lock().unwrap().links = vec![link(1, "Design")];
+    let svc = service(&f);
+    let current = Uuid::from_u128(101).to_string();
+
+    assert!(
+        svc.authorize_signup("stranger@example.com", Some(&current))
+            .await
+            .unwrap()
+    );
+    for other in [
+        Uuid::from_u128(999).to_string(),
+        "not-a-link".into(),
+        String::new(),
+    ] {
+        assert!(
+            !svc.authorize_signup("stranger@example.com", Some(&other))
+                .await
+                .unwrap()
+        );
+    }
+
+    svc.revoke_invite_link(ROOT, Uuid::from_u128(1))
+        .await
+        .unwrap();
+    assert!(
+        !svc.authorize_signup("stranger@example.com", Some(&current))
+            .await
+            .unwrap()
+    );
 }
 
 #[tokio::test]

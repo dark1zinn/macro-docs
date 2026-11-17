@@ -151,11 +151,17 @@ where
         Ok(())
     }
 
-    /// Decides whether a signup with `email` may proceed.
+    /// Decides whether a signup with `email` may proceed; `invite_link` is the
+    /// workspace invite link token the person arrived with, if any.
     ///
     /// Signup is always open until a root admin exists. After that, `Open`
-    /// allows everyone, and `InviteOnly` allows allowlisted or invited emails.
-    pub async fn authorize_signup(&self, email: &str) -> Result<bool, SelfHostError> {
+    /// allows everyone, and `InviteOnly` allows allowlisted or invited emails
+    /// and anyone holding a current workspace invite link.
+    pub async fn authorize_signup(
+        &self,
+        email: &str,
+        invite_link: Option<&str>,
+    ) -> Result<bool, SelfHostError> {
         let Ok(email) = normalize_email(email) else {
             return Ok(false);
         };
@@ -164,7 +170,16 @@ where
         }
         match self.repo.get_policy().await? {
             SignupPolicy::Open => Ok(true),
-            SignupPolicy::InviteOnly => Ok(self.repo.has_signup_grant(&email).await?),
+            SignupPolicy::InviteOnly => {
+                if self.repo.has_signup_grant(&email).await? {
+                    return Ok(true);
+                }
+                // A link is a UUID; anything else cannot be a current one.
+                match invite_link.and_then(|token| Uuid::parse_str(token.trim()).ok()) {
+                    Some(token) => Ok(self.repo.invite_link_exists(token).await?),
+                    None => Ok(false),
+                }
+            }
         }
     }
 

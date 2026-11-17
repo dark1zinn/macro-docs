@@ -724,11 +724,30 @@ async fn export_audit(
         .into_response())
 }
 
+/// Key of the FusionAuth user metadata that records a passwordless sign-up
+/// the self-host policy already allowed through a workspace invite link, so
+/// the user-created webhook does not refuse it for lack of an email grant.
+/// Only the flag is stored, never the link itself.
+pub(crate) const INVITE_LINK_SIGNUP_DATA_KEY: &str = "selfhostInviteLinkSignup";
+
+/// Whether a new user's FusionAuth metadata records an invite-link sign-up
+/// the login handler already allowed.
+pub(crate) fn invite_link_signup(data: Option<&serde_json::Value>) -> bool {
+    data.and_then(|data| data.get(INVITE_LINK_SIGNUP_DATA_KEY))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+}
+
 /// Returns a denial response when self-host mode is on and the email may not
-/// sign up. `None` means proceed, including whenever self-host mode is off.
-pub(crate) async fn signup_denied(ctx: &ApiContext, email: &str) -> Option<Response> {
+/// sign up, given the workspace invite link it arrived with, if any. `None`
+/// means proceed, including whenever self-host mode is off.
+pub(crate) async fn signup_denied(
+    ctx: &ApiContext,
+    email: &str,
+    invite_link: Option<&str>,
+) -> Option<Response> {
     let svc = ctx.selfhost.as_ref()?;
-    match svc.authorize_signup(email).await {
+    match svc.authorize_signup(email, invite_link).await {
         Ok(true) => None,
         Ok(false) => Some(signup_forbidden_response()),
         Err(error) => {

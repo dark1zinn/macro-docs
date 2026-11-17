@@ -57,7 +57,9 @@ built with `VITE_SELF_HOSTED=true`):
   Self-host → Server mail** and pass codes on to the people signing up.
   Mailpit itself is not published.
 - **Signups are invite-only after that.** A new account is accepted when its
-  email is on the allowed list or has a pending team invite. The
+  email is on the allowed list or has a pending team invite, or when the
+  person signs up through a workspace's current invite link (revoking the
+  link closes that way in). The
   administrator changes this, allows emails (optionally emailing each person
   an invitation with a sign-up link to this server), promotes other
   administrators and disables accounts under **Settings → Self-host**. One

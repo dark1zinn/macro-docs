@@ -13,6 +13,10 @@ pub struct PasswordlessRequest {
     /// see `revert_unconfirmed_agent`.
     #[serde(default)]
     pub is_agent: bool,
+    /// The workspace invite link the person signs up through, if any. Self-
+    /// hosted invite-only servers let its holder create an account.
+    #[serde(default)]
+    pub team_invite_link: Option<String>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, ToSchema)]

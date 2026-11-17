@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PasswordlessRequestReferralCode } from './passwordlessRequestReferralCode';
+import type { PasswordlessRequestTeamInviteLink } from './passwordlessRequestTeamInviteLink';
 
 export interface PasswordlessRequest {
   /** The email to initiate passwordless authentication for */
@@ -17,4 +18,7 @@ see `revert_unconfirmed_agent`. */
   redirect_uri: string;
   /** The referral code */
   referral_code?: PasswordlessRequestReferralCode;
+  /** The workspace invite link the person signs up through, if any. Self-
+hosted invite-only servers let its holder create an account. */
+  team_invite_link?: PasswordlessRequestTeamInviteLink;
 }
