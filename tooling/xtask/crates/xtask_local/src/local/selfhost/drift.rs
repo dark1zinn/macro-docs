@@ -46,7 +46,9 @@ fn secret_names(group: &str) -> Vec<&'static str> {
 /// Meta pixel, so those are set on that service alone; in the shared env they
 /// would switch on the auth service's analytics. Also optional features the
 /// stack doesn't deploy: hosted-computer billing (no billing in self-host
-/// mode) and the passwords vault, which needs an OpenBao server.
+/// mode) and the passwords vault, which needs an OpenBao server. And the
+/// larger thread stack the local stack's debug builds need; self-host runs
+/// release builds.
 const EXCLUDED: &[&str] = &[
     "COMPOSE_PROJECT_NAME",
     "FRONTEND_PORT",
@@ -57,6 +59,7 @@ const EXCLUDED: &[&str] = &[
     "OPENBAO_ADDRESS",
     "PASSWORDS_JWT_ISSUER",
     "POSTHOG_API_KEY",
+    "RUST_MIN_STACK",
     "STRIPE_COMPUTER_LARGE_MONTHLY_PRICE_ID",
     "STRIPE_COMPUTER_LARGE_YEARLY_PRICE_ID",
     "STRIPE_COMPUTER_STANDARD_MONTHLY_PRICE_ID",
