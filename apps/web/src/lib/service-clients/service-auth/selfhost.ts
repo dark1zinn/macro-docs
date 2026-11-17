@@ -41,7 +41,9 @@ export type SelfHostAuditAction =
   | 'allowed_email_invited'
   | 'invite_link_revoked'
   | 'team_invite_revoked'
-  | 'team_invite_resent';
+  | 'team_invite_resent'
+  | 'captured_mail_deleted'
+  | 'captured_mail_cleared';
 
 /** A workspace's shareable invite link. */
 export type SelfHostInviteLink = {
@@ -75,6 +77,24 @@ export type SelfHostInvites = {
 export type SelfHostRevokedAll = {
   revoked: number;
   failed: { target: string; error: string }[];
+};
+
+/** A message the server sent, held by the mail capture instead of delivered. */
+export type SelfHostMail = {
+  id: string;
+  from: string;
+  to: string[];
+  subject: string;
+  created_at: string;
+  snippet: string;
+};
+
+export type SelfHostMailPage = { messages: SelfHostMail[]; total: number };
+
+/** `html` is untrusted: render it only in a sandboxed frame. */
+export type SelfHostMailMessage = SelfHostMail & {
+  text: string | null;
+  html: string | null;
 };
 
 /** One recorded admin action. `actor` is absent for system actions. */
@@ -217,5 +237,29 @@ export const selfHostClient = {
     fetchWithToken<Uint8Array, SelfHostErrorCode>(
       `${base}/audit/export?${auditParams(filter)}`,
       { errorResponseHandler: readError }
+    ),
+  /** Mail the server sent and the capture kept, newest first. */
+  mail: (search: string, start: number) => {
+    const params = new URLSearchParams({ start: String(start) });
+    if (search.trim()) params.set('search', search.trim());
+    return fetchWithToken<SelfHostMailPage, SelfHostErrorCode>(
+      `${base}/mail?${params.toString()}`,
+      { errorResponseHandler: readError }
+    );
+  },
+  mailMessage: (id: string) =>
+    fetchWithToken<SelfHostMailMessage, SelfHostErrorCode>(
+      `${base}/mail/${encodeURIComponent(id)}`,
+      { errorResponseHandler: readError }
+    ),
+  deleteMail: (id: string) =>
+    fetchWithToken<object, SelfHostErrorCode>(
+      `${base}/mail/delete`,
+      send('POST', { id })
+    ),
+  clearMail: () =>
+    fetchWithToken<object, SelfHostErrorCode>(
+      `${base}/mail/clear`,
+      send('POST', {})
     ),
 };

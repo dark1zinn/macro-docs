@@ -917,7 +917,8 @@ async fn run_server() -> anyhow::Result<()> {
             Arc::new(auth_client.clone()),
             teams_service.clone(),
             notification_ingress_service.clone(),
-        );
+        )
+        .context("selfhost configuration is invalid")?;
         handle
             .backfill()
             .await

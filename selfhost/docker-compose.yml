@@ -30,6 +30,12 @@ x-macro-env: &macro-env
   # Self-host mode: every account fully entitled (no plans or billing), the
   # first account is the root administrator, signups are admin-controlled.
   MACRO_SELF_HOSTED: "true"
+  # With a setup token, root goes to whoever signs in with it in place of the
+  # emailed code, not to the first account; no mail is needed to set up.
+  MACRO_SELFHOST_SETUP_TOKEN: ${MACRO_SELFHOST_SETUP_TOKEN:-}
+  # Where admins read the mail the `mailcatcher` profile keeps (Settings →
+  # Self-host → Server mail).
+  MACRO_SELFHOST_MAIL_CAPTURE_URL: http://mailpit:8025
   # Observability is off unless an OTLP/gRPC endpoint is set (the
   # `observability` profile's is http://otel-lgtm:4317).
   OTEL_EXPORTER_OTLP_ENDPOINT: ${MACRO_OTEL_GRPC_ENDPOINT:-}
@@ -851,18 +857,16 @@ services:
 
   # ==========================================================================
   # Profile `mailcatcher`: keep every outgoing mail (login codes included) in
-  # a local inbox instead of delivering it. For trying the stack without an
-  # SMTP provider: set SMTP_RELAY_HOST=mailpit, SMTP_RELAY_PORT=1025 and
-  # SMTP_RELAY_TLS_LEVEL=may. Its inbox is published on loopback only: it
-  # holds login codes, so never expose it publicly.
+  # a local inbox instead of delivering it: set SMTP_RELAY_HOST=mailpit,
+  # SMTP_RELAY_PORT=1025 and SMTP_RELAY_TLS_LEVEL=may. Administrators read it
+  # under Settings → Self-host → Server mail and pass sign-in codes on, so
+  # nobody gets in without them. It is not published: it holds login codes.
   # ==========================================================================
   mailpit:
     profiles: [mailcatcher]
     image: axllent/mailpit:v1.20
     restart: unless-stopped
     logging: *logging
-    ports:
-      - "${MAILPIT_BIND:-127.0.0.1}:${MAILPIT_PORT:-8025}:8025"
     networks: [edge]
 
   # ==========================================================================

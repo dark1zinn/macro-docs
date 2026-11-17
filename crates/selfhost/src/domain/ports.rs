@@ -8,8 +8,9 @@ use roles_and_permissions::domain::model::RoleId;
 use uuid::Uuid;
 
 use super::model::{
-    AllowedEmail, AuditEntry, AuditQuery, AuditStatus, ClaimedInvite, InviteClaim,
-    InviteLinkRecord, NewAuditEntry, PendingInvite, SelfHostError, SignupPolicy, UserRecord,
+    AllowedEmail, AuditEntry, AuditQuery, AuditStatus, CapturedMessage, ClaimedInvite, InviteClaim,
+    InviteLinkRecord, MailPage, MailQuery, NewAuditEntry, PendingInvite, SelfHostError,
+    SignupPolicy, UserRecord,
 };
 
 /// Persistence for self-host state.
@@ -149,4 +150,21 @@ pub trait ServerInviter: Send + Sync + 'static {
 
     /// Emails `email` an invitation to sign up, sent on behalf of `admin`.
     async fn invite(&self, admin: &str, email: &str) -> anyhow::Result<()>;
+}
+
+/// The mail the server sent, held by a local capture instead of delivered.
+/// Every method returns [`SelfHostError::Unavailable`] when no capture is set up.
+#[async_trait]
+pub trait MailCapture: Send + Sync + 'static {
+    /// One page of captured messages, newest first.
+    async fn list(&self, query: &MailQuery) -> Result<MailPage, SelfHostError>;
+
+    /// One captured message with its bodies.
+    async fn get(&self, id: &str) -> Result<Option<CapturedMessage>, SelfHostError>;
+
+    /// Deletes one captured message. Returns `false` when it does not exist.
+    async fn delete(&self, id: &str) -> Result<bool, SelfHostError>;
+
+    /// Deletes every captured message.
+    async fn clear(&self) -> Result<(), SelfHostError>;
 }

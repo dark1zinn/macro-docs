@@ -17,7 +17,9 @@ macro_user_id = { path = "../macro_user_id" }
 model-entity = { path = "../model-entity" }
 non_empty = { path = "../non_empty" }
 notification = { path = "../notification", default-features = false }
+reqwest = { workspace = true }
 roles_and_permissions = { path = "../roles_and_permissions" }
+serde = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true, features = ["json", "uuid"] }
 teams = { path = "../teams", default-features = false, features = ["ports"] }

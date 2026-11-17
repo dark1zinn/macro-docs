@@ -12,16 +12,20 @@ use uuid::Uuid;
 
 use super::model::{
     AllowedEmail, AuditAction, AuditEntry, AuditQuery, AuditStatus, BulkFailure, BulkOutcome,
-    InviteClaim, InvitesOverview, NewAuditEntry, PendingInvite, SelfHostError, SignupPolicy,
-    UserEntry, UserRecord,
+    CapturedMessage, InviteClaim, InvitesOverview, MailPage, MailQuery, NewAuditEntry,
+    PendingInvite, SelfHostError, SetupToken, SignupPolicy, UserEntry, UserRecord,
 };
 use super::ports::{
-    AccountPort, AuditLog, RolesPort, SelfHostRepo, ServerInviter, WorkspaceInvites,
+    AccountPort, AuditLog, MailCapture, RolesPort, SelfHostRepo, ServerInviter, WorkspaceInvites,
 };
 
 /// Default and largest audit page sizes.
 const AUDIT_PAGE: i64 = 50;
 const AUDIT_PAGE_MAX: i64 = 200;
+
+/// Default and largest captured-mail page sizes.
+const MAIL_PAGE: u32 = 50;
+const MAIL_PAGE_MAX: u32 = 200;
 
 /// Roles granted to every account so self-host users are fully entitled.
 fn entitlements() -> [RoleId; 2] {
@@ -29,16 +33,18 @@ fn entitlements() -> [RoleId; 2] {
 }
 
 /// Enforces self-host rules over the ports.
-pub struct SelfHostService<R, P, A, L, W, I> {
+pub struct SelfHostService<R, P, A, L, W, I, M> {
     repo: R,
     roles: P,
     accounts: A,
     audit: L,
     workspaces: W,
     inviter: I,
+    mail: M,
+    setup_token: Option<SetupToken>,
 }
 
-impl<R, P, A, L, W, I> SelfHostService<R, P, A, L, W, I>
+impl<R, P, A, L, W, I, M> SelfHostService<R, P, A, L, W, I, M>
 where
     R: SelfHostRepo,
     P: RolesPort,
@@ -46,9 +52,18 @@ where
     L: AuditLog,
     W: WorkspaceInvites,
     I: ServerInviter,
+    M: MailCapture,
 {
     /// Creates the service from its ports.
-    pub fn new(repo: R, roles: P, accounts: A, audit: L, workspaces: W, inviter: I) -> Self {
+    pub fn new(
+        repo: R,
+        roles: P,
+        accounts: A,
+        audit: L,
+        workspaces: W,
+        inviter: I,
+        mail: M,
+    ) -> Self {
         Self {
             repo,
             roles,
@@ -56,27 +71,75 @@ where
             audit,
             workspaces,
             inviter,
+            mail,
+            setup_token: None,
         }
     }
 
-    /// Applies entitlements to a newly created account and claims root if none exists.
+    /// Reserves root for whoever signs in with `token`: accounts no longer
+    /// become root by being created first.
+    pub fn with_setup_token(mut self, token: SetupToken) -> Self {
+        self.setup_token = Some(token);
+        self
+    }
+
+    /// Applies entitlements to a newly created account and, unless a setup
+    /// token reserves root, claims root if none exists.
     pub async fn on_user_created(&self, email: &str) -> Result<(), SelfHostError> {
         let macro_user_id = macro_user_id_for(email)?;
         self.roles
             .grant_roles(&macro_user_id, &entitlements())
             .await?;
-        if self.repo.claim_root_admin(&macro_user_id).await? {
-            tracing::info!("selfhost root admin claimed");
-            // The claim is atomic and usually a no-op, so it is recorded after
-            // the fact; a lost entry must not fail the signup.
-            if let Err(error) = self
-                .record_system(AuditAction::RootClaimed, &macro_user_id)
-                .await
-            {
-                tracing::error!(error = ?error, "failed to audit the root admin claim");
-            }
+        if self.setup_token.is_none() {
+            self.claim_root(&macro_user_id, "first account").await;
         }
         Ok(())
+    }
+
+    /// Whether `token` is the setup token and root is still unclaimed, so a
+    /// sign-in may use it in place of the emailed code.
+    pub async fn setup_token_accepted(&self, token: &str) -> Result<bool, SelfHostError> {
+        let Some(setup) = &self.setup_token else {
+            return Ok(false);
+        };
+        Ok(setup.matches(token) && !self.repo.root_exists().await?)
+    }
+
+    /// Makes `email` root after it signed in with the setup token. Returns
+    /// whether it became root; `false` when another account claimed it first.
+    pub async fn claim_root_with_setup_token(&self, email: &str) -> Result<bool, SelfHostError> {
+        if self.setup_token.is_none() {
+            return Ok(false);
+        }
+        let macro_user_id = macro_user_id_for(email)?;
+        Ok(self.claim_root(&macro_user_id, "setup token").await)
+    }
+
+    /// Claims root for `macro_user_id` if no admin exists and audits the
+    /// claim. The claim is atomic and usually a no-op, so it is recorded after
+    /// the fact; a lost entry must not fail the sign-up.
+    async fn claim_root(&self, macro_user_id: &str, via: &str) -> bool {
+        match self.repo.claim_root_admin(macro_user_id).await {
+            Ok(true) => {
+                tracing::info!(via, "selfhost root admin claimed");
+                if let Err(error) = self
+                    .record_system(
+                        AuditAction::RootClaimed,
+                        macro_user_id,
+                        json!({ "via": via }),
+                    )
+                    .await
+                {
+                    tracing::error!(error = ?error, "failed to audit the root admin claim");
+                }
+                true
+            }
+            Ok(false) => false,
+            Err(error) => {
+                tracing::error!(error = ?error, "failed to claim root admin");
+                false
+            }
+        }
     }
 
     /// Re-applies entitlements to every existing account, oldest first, so the
@@ -488,6 +551,75 @@ where
         .await
     }
 
+    /// One page of the mail the server sent and the capture kept, newest
+    /// first. Requires an admin caller.
+    pub async fn list_captured_mail(
+        &self,
+        caller: &str,
+        query: MailQuery,
+    ) -> Result<MailPage, SelfHostError> {
+        self.require_admin(caller).await?;
+        let search = query
+            .search
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty());
+        let query = MailQuery {
+            search,
+            limit: Some(query.limit.unwrap_or(MAIL_PAGE).clamp(1, MAIL_PAGE_MAX)),
+            ..query
+        };
+        self.mail.list(&query).await
+    }
+
+    /// One captured message with its bodies. Requires an admin caller.
+    pub async fn captured_message(
+        &self,
+        caller: &str,
+        id: &str,
+    ) -> Result<CapturedMessage, SelfHostError> {
+        self.require_admin(caller).await?;
+        self.mail
+            .get(id)
+            .await?
+            .ok_or(SelfHostError::NotFound("message"))
+    }
+
+    /// Deletes one captured message. Requires an admin caller.
+    pub async fn delete_captured_mail(&self, caller: &str, id: &str) -> Result<(), SelfHostError> {
+        self.require_admin(caller).await?;
+        let message = self
+            .mail
+            .get(id)
+            .await?
+            .ok_or(SelfHostError::NotFound("message"))?;
+        let entry = NewAuditEntry {
+            actor: Some(caller.to_owned()),
+            action: AuditAction::CapturedMailDeleted,
+            target: Some(message.mail.to.join(", ")),
+            details: json!({ "id": id, "subject": message.mail.subject }),
+        };
+        self.run_audited(entry, async {
+            if self.mail.delete(id).await? {
+                Ok(())
+            } else {
+                Err(SelfHostError::NotFound("message"))
+            }
+        })
+        .await
+    }
+
+    /// Deletes every captured message. Requires an admin caller.
+    pub async fn clear_captured_mail(&self, caller: &str) -> Result<(), SelfHostError> {
+        self.require_admin(caller).await?;
+        let entry = NewAuditEntry {
+            actor: Some(caller.to_owned()),
+            action: AuditAction::CapturedMailCleared,
+            target: None,
+            details: json!({}),
+        };
+        self.run_audited(entry, self.mail.clear()).await
+    }
+
     /// Lists audit entries, newest first. Requires an admin caller.
     pub async fn list_audit(
         &self,
@@ -547,12 +679,17 @@ where
         result
     }
 
-    async fn record_system(&self, action: AuditAction, target: &str) -> anyhow::Result<()> {
+    async fn record_system(
+        &self,
+        action: AuditAction,
+        target: &str,
+        details: serde_json::Value,
+    ) -> anyhow::Result<()> {
         let entry = NewAuditEntry {
             actor: None,
             action,
             target: Some(target.to_owned()),
-            details: json!({}),
+            details,
         };
         let id = self.audit.begin(&entry).await?;
         self.audit.finish(id, &AuditStatus::Succeeded).await

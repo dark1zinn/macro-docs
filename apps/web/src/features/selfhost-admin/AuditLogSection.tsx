@@ -32,6 +32,8 @@ const ACTIONS: ActionOption[] = [
   { value: 'invite_link_revoked', label: 'Invite link revoked' },
   { value: 'team_invite_revoked', label: 'Workspace invite cancelled' },
   { value: 'team_invite_resent', label: 'Workspace invite resent' },
+  { value: 'captured_mail_deleted', label: 'Server mail deleted' },
+  { value: 'captured_mail_cleared', label: 'Server mail cleared' },
   { value: 'root_claimed', label: 'Root admin claimed' },
 ];
 
@@ -56,7 +58,9 @@ export function describeAuditEntry(entry: SelfHostAuditEntry): string {
       : email(entry.target);
   switch (entry.action) {
     case 'root_claimed':
-      return `${target} became the root admin`;
+      return entry.details.via === 'setup token'
+        ? `${target} became the root admin with the setup token`
+        : `${target} became the root admin`;
     case 'admin_granted':
       return `${who} made ${target} an admin`;
     case 'admin_revoked':
@@ -85,6 +89,14 @@ export function describeAuditEntry(entry: SelfHostAuditEntry): string {
       return `${who} resent ${target}'s invite to ${detail(entry, 'team_name')}${
         entry.details.immediate === true ? ' before its resend window' : ''
       }`;
+    case 'captured_mail_deleted':
+      return `${who} deleted server mail to ${entry.target ?? 'nobody'}${
+        typeof entry.details.subject === 'string'
+          ? ` ("${entry.details.subject}")`
+          : ''
+      }`;
+    case 'captured_mail_cleared':
+      return `${who} deleted all server mail`;
   }
 }
 

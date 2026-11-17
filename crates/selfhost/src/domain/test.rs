@@ -10,11 +10,11 @@ use uuid::Uuid;
 
 use super::model::{
     AllowedEmail, AuditAction, AuditEntry, AuditQuery, AuditStatus, BulkFailure, BulkOutcome,
-    ClaimedInvite, InviteClaim, InviteLinkRecord, NewAuditEntry, PendingInvite, SelfHostError,
-    SignupPolicy, UserRecord,
+    CapturedMail, CapturedMessage, ClaimedInvite, InviteClaim, InviteLinkRecord, MailPage,
+    MailQuery, NewAuditEntry, PendingInvite, SelfHostError, SetupToken, SignupPolicy, UserRecord,
 };
 use super::ports::{
-    AccountPort, AuditLog, RolesPort, SelfHostRepo, ServerInviter, WorkspaceInvites,
+    AccountPort, AuditLog, MailCapture, RolesPort, SelfHostRepo, ServerInviter, WorkspaceInvites,
 };
 use super::service::SelfHostService;
 
@@ -61,6 +61,12 @@ struct State {
     fail_server_invite: bool,
     /// When set, another admin invites the address while this send fails.
     invited_elsewhere_during_send: bool,
+    /// Captured outgoing mail, newest first.
+    mail: Vec<CapturedMessage>,
+    /// When set, the mail capture is not set up.
+    mail_off: bool,
+    /// The last query the mail capture was listed with.
+    last_mail_query: Option<MailQuery>,
 }
 
 #[derive(Clone, Default)]
@@ -516,7 +522,55 @@ impl ServerInviter for Fake {
     }
 }
 
-fn service(f: &Fake) -> SelfHostService<Fake, Fake, Fake, Fake, Fake, Fake> {
+/// A captured message to `to`, holding a sign-in code.
+fn captured(id: &str, to: &str) -> CapturedMessage {
+    CapturedMessage {
+        mail: CapturedMail {
+            id: id.into(),
+            from: "noreply@example.com".into(),
+            to: vec![to.into()],
+            subject: format!("Message {id}"),
+            created_at: Utc::now(),
+            snippet: "Your code is 123456".into(),
+        },
+        text: Some("Your code is 123456".into()),
+        html: None,
+    }
+}
+
+#[async_trait]
+impl MailCapture for Fake {
+    async fn list(&self, query: &MailQuery) -> Result<MailPage, SelfHostError> {
+        let mut state = self.0.lock().unwrap();
+        state.last_mail_query = Some(query.clone());
+        if state.mail_off {
+            return Err(SelfHostError::Unavailable("mail capture is off".into()));
+        }
+        Ok(MailPage {
+            total: u32::try_from(state.mail.len()).unwrap(),
+            messages: state.mail.iter().map(|m| m.mail.clone()).collect(),
+        })
+    }
+
+    async fn get(&self, id: &str) -> Result<Option<CapturedMessage>, SelfHostError> {
+        let state = self.0.lock().unwrap();
+        Ok(state.mail.iter().find(|m| m.mail.id == id).cloned())
+    }
+
+    async fn delete(&self, id: &str) -> Result<bool, SelfHostError> {
+        let mut state = self.0.lock().unwrap();
+        let before = state.mail.len();
+        state.mail.retain(|m| m.mail.id != id);
+        Ok(state.mail.len() < before)
+    }
+
+    async fn clear(&self) -> Result<(), SelfHostError> {
+        self.0.lock().unwrap().mail.clear();
+        Ok(())
+    }
+}
+
+fn service(f: &Fake) -> SelfHostService<Fake, Fake, Fake, Fake, Fake, Fake, Fake> {
     SelfHostService::new(
         f.clone(),
         f.clone(),
@@ -524,7 +578,14 @@ fn service(f: &Fake) -> SelfHostService<Fake, Fake, Fake, Fake, Fake, Fake> {
         f.clone(),
         f.clone(),
         f.clone(),
+        f.clone(),
     )
+}
+
+const SETUP_TOKEN: &str = "0123456789abcdef0123456789abcdef";
+
+fn service_with_setup_token(f: &Fake) -> SelfHostService<Fake, Fake, Fake, Fake, Fake, Fake, Fake> {
+    service(f).with_setup_token(SetupToken::parse(SETUP_TOKEN).unwrap())
 }
 
 #[tokio::test]
@@ -1391,4 +1452,177 @@ async fn a_failed_invitation_keeps_a_concurrent_successful_one() {
             AuditStatus::Failed(_)
         ))
     ));
+}
+
+// -- Setup token --
+
+/// With a setup token, being created first no longer makes an account root,
+/// at sign-up or at the startup backfill.
+#[tokio::test]
+async fn a_setup_token_reserves_root() {
+    let f = Fake::with_users(&[("fa-1", "stranger@example.com")]);
+    let svc = service_with_setup_token(&f);
+
+    svc.on_user_created("stranger@example.com").await.unwrap();
+    svc.backfill().await.unwrap();
+
+    assert!(!f.has_role("stranger@example.com", RoleId::SuperAdmin));
+    assert!(f.has_role("stranger@example.com", RoleId::SubMax));
+    assert!(f.audit().is_empty());
+}
+
+/// The setup token is accepted only as itself, only while root is unclaimed,
+/// and the account that signs in with it becomes root, audited as such.
+#[tokio::test]
+async fn signing_in_with_the_setup_token_claims_root_once() {
+    let f = Fake::with_users(&[("fa-1", "owner@example.com"), ("fa-2", "other@example.com")]);
+    let svc = service_with_setup_token(&f);
+    svc.on_user_created("owner@example.com").await.unwrap();
+
+    assert!(!svc.setup_token_accepted("123456").await.unwrap());
+    assert!(!svc.setup_token_accepted(&SETUP_TOKEN[1..]).await.unwrap());
+    assert!(svc.setup_token_accepted(SETUP_TOKEN).await.unwrap());
+    assert!(
+        svc.claim_root_with_setup_token("owner@example.com")
+            .await
+            .unwrap()
+    );
+
+    assert!(f.has_role("owner@example.com", RoleId::SuperAdmin));
+    assert!(!svc.setup_token_accepted(SETUP_TOKEN).await.unwrap());
+    assert!(
+        !svc.claim_root_with_setup_token("other@example.com")
+            .await
+            .unwrap()
+    );
+    assert!(!f.has_role("other@example.com", RoleId::SuperAdmin));
+    let state = f.0.lock().unwrap();
+    let [(entry, AuditStatus::Succeeded)] = state.audit.as_slice() else {
+        panic!("expected one recorded claim, got {:?}", state.audit);
+    };
+    assert_eq!(entry.action, AuditAction::RootClaimed);
+    assert_eq!(entry.target.as_deref(), Some("macro|owner@example.com"));
+    assert_eq!(entry.details["via"], "setup token");
+}
+
+/// Without a configured token nothing stands in for the emailed code.
+#[tokio::test]
+async fn without_a_setup_token_no_code_substitute_exists() {
+    let f = Fake::with_users(&[("fa-1", "owner@example.com")]);
+    let svc = service(&f);
+
+    assert!(!svc.setup_token_accepted(SETUP_TOKEN).await.unwrap());
+    assert!(
+        !svc.claim_root_with_setup_token("owner@example.com")
+            .await
+            .unwrap()
+    );
+}
+
+/// Tokens too short to resist guessing, or that would change in a URL, are refused.
+#[test]
+fn setup_tokens_must_be_long_and_url_safe() {
+    assert!(SetupToken::parse(SETUP_TOKEN).is_ok());
+    assert!(SetupToken::parse(&SETUP_TOKEN[1..]).is_err());
+    assert!(SetupToken::parse(&format!("{SETUP_TOKEN}/x")).is_err());
+    assert!(SetupToken::parse(&format!("{SETUP_TOKEN} x")).is_err());
+}
+
+// -- Captured mail --
+
+fn with_mail() -> Fake {
+    let f = two_users_with_root();
+    f.0.lock().unwrap().mail = vec![
+        captured("m2", "new@example.com"),
+        captured("m1", "other@example.com"),
+    ];
+    f
+}
+
+/// Only admins read captured mail; the page size is bounded and a blank
+/// search means none.
+#[tokio::test]
+async fn only_admins_read_captured_mail() {
+    let f = with_mail();
+    let svc = service(&f);
+
+    let page = svc
+        .list_captured_mail(
+            ROOT,
+            MailQuery {
+                search: Some("  ".into()),
+                start: 0,
+                limit: Some(10_000),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(page.total, 2);
+    let query = f.0.lock().unwrap().last_mail_query.clone().unwrap();
+    assert_eq!((query.search, query.limit), (None, Some(200)));
+    let message = svc.captured_message(ROOT, "m2").await.unwrap();
+    assert_eq!(message.text.as_deref(), Some("Your code is 123456"));
+
+    for err in [
+        svc.list_captured_mail(SECOND, MailQuery::default())
+            .await
+            .unwrap_err(),
+        svc.captured_message(SECOND, "m2").await.unwrap_err(),
+        svc.delete_captured_mail(SECOND, "m2").await.unwrap_err(),
+        svc.clear_captured_mail(SECOND).await.unwrap_err(),
+    ] {
+        assert!(matches!(err, SelfHostError::Forbidden), "{err:?}");
+    }
+    assert_eq!(f.0.lock().unwrap().mail.len(), 2);
+}
+
+/// Deleting captured mail is audited against its recipients; an unknown
+/// message is not found and leaves no entry.
+#[tokio::test]
+async fn deleting_captured_mail_is_audited() {
+    let f = with_mail();
+    let svc = service(&f);
+
+    let err = svc.delete_captured_mail(ROOT, "missing").await.unwrap_err();
+    assert!(matches!(err, SelfHostError::NotFound("message")));
+    assert!(f.audit().is_empty());
+
+    svc.delete_captured_mail(ROOT, "m2").await.unwrap();
+    svc.clear_captured_mail(ROOT).await.unwrap();
+
+    assert!(f.0.lock().unwrap().mail.is_empty());
+    let recorded: Vec<_> = f
+        .audit()
+        .into_iter()
+        .map(|(_, a, t, s)| (a, t, s))
+        .collect();
+    assert_eq!(
+        recorded,
+        [
+            (
+                AuditAction::CapturedMailDeleted,
+                Some("new@example.com".into()),
+                AuditStatus::Succeeded
+            ),
+            (
+                AuditAction::CapturedMailCleared,
+                None,
+                AuditStatus::Succeeded
+            ),
+        ]
+    );
+}
+
+/// A server without a mail capture says so as unavailable, not as an error.
+#[tokio::test]
+async fn an_absent_mail_capture_is_unavailable() {
+    let f = with_mail();
+    f.0.lock().unwrap().mail_off = true;
+    let svc = service(&f);
+
+    let err = svc
+        .list_captured_mail(ROOT, MailQuery::default())
+        .await
+        .unwrap_err();
+    assert!(matches!(err, SelfHostError::Unavailable(_)));
 }
