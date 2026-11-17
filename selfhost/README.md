@@ -110,9 +110,17 @@ without TLS.
 Enable profiles with `COMPOSE_PROFILES` in `.env`, comma-separated, or with
 `docker compose --profile <name> up -d`.
 
+Every service has CPU and memory limits sized for a 4 vCPU / 6 GB server
+that also runs other things: with `search`, `ai` and `mailcatcher` the stack
+uses about 2.1 cores while it first starts and about 3.5 GB of RAM and a
+third of a core when idle. The JVM heaps follow the same size
+(`OPENSEARCH_JAVA_OPTS`, `KAFKA_HEAP_OPTS`, `FUSIONAUTH_MEMORY` in `.env`);
+on a larger machine raise them together with the `deploy` limits in
+`docker-compose.yml`.
+
 |Profile|Adds|Needs|
 |---|---|---|
-|*(core)*|Auth, onboarding, documents, realtime sync, files, notifications, contacts, link previews, agents and AI chat (they answer once model keys are set), OpenSearch (document storage needs it; ~1 GB RAM, and on the host `sysctl vm.max_map_count=262144`)|`MACRO_PUBLIC_URL`, mail settings. For AI: your model provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, ...); managed coding sandboxes need `DAYTONA_API_KEY`, and the host Docker socket is never mounted.|
+|*(core)*|Auth, onboarding, documents, realtime sync, files, notifications, contacts, link previews, agents and AI chat (they answer once model keys are set), OpenSearch (document storage needs it; ~700 MB RAM, and on the host `sysctl vm.max_map_count=262144`)|`MACRO_PUBLIC_URL`, mail settings. For AI: your model provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, ...); managed coding sandboxes need `DAYTONA_API_KEY`, and the host Docker socket is never mounted.|
 |`search`|Full-text search: indexes content into OpenSearch||
 |`ai`|AI document editing worker|Your model provider keys|
 |`email`|Gmail inbox and Google Calendar|A Google OAuth client (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET_KEY`)|

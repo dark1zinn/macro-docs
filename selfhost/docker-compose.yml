@@ -255,11 +255,17 @@ x-rust: &rust
     timeout: 10s
     retries: 3
     start_period: 20s
+  # Resource limits are sized for a 4 vCPU / 6 GB host that also runs other
+  # services (such as Coolify). Measured with the search, ai and mailcatcher
+  # profiles: about 2.1 cores at first boot, then 3.5 GB and a third of a
+  # core at idle. Raise them (and the JVM heaps) on larger machines.
+  deploy: { resources: { limits: { cpus: "0.20", memory: 128M } } }
 
 x-one-shot: &one-shot
   image: *init-image
   restart: "no"
   logging: *logging
+  deploy: { resources: { limits: { cpus: "0.25", memory: 192M } } }
 
 services:
   # ==========================================================================
@@ -279,6 +285,8 @@ services:
     restart: "no"
     command: ["xtask_local", "selfhost-init", "provision"]
     networks: [backend]
+    # Runs the database migrations.
+    deploy: { resources: { limits: { cpus: "0.50", memory: 384M } } }
     depends_on:
       bootstrap:
         condition: service_completed_successfully
@@ -321,6 +329,7 @@ services:
       bootstrap:
         condition: service_completed_successfully
     networks: [backend]
+    deploy: { resources: { limits: { cpus: "0.40", memory: 384M } } }
 
   redis:
     image: redis:7.4-alpine
@@ -335,6 +344,7 @@ services:
       timeout: 5s
       retries: 10
     networks: [backend]
+    deploy: { resources: { limits: { cpus: "0.10", memory: 96M } } }
 
   kafka:
     image: apache/kafka:3.9.1
@@ -356,15 +366,18 @@ services:
       KAFKA_LOG_DIRS: /var/lib/kafka/data
       # Fixed, so the volume survives container recreation.
       CLUSTER_ID: TWFjcm9TZWxmSG9zdDEx
+      KAFKA_HEAP_OPTS: ${KAFKA_HEAP_OPTS:--Xms256m -Xmx256m}
     volumes:
       - kafka_data:/var/lib/kafka/data
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:29092 > /dev/null 2>&1"]
       interval: 10s
-      timeout: 10s
+      # The probe starts a JVM, which is slow under the CPU limit.
+      timeout: 30s
       retries: 20
       start_period: 60s
     networks: [backend]
+    deploy: { resources: { limits: { cpus: "0.40", memory: 640M } } }
 
   # S3, SQS, DynamoDB and KMS. Floci is an MIT-licensed LocalStack-compatible
   # emulator; `localstack` is the hostname every service and presigned URL uses.
@@ -388,6 +401,7 @@ services:
         aliases: [localstack]
       backend:
         aliases: [localstack]
+    deploy: { resources: { limits: { cpus: "0.15", memory: 192M } } }
 
   # ==========================================================================
   # Identity and mail
@@ -413,6 +427,7 @@ services:
       bootstrap:
         condition: service_completed_successfully
     networks: [fusionauth-db]
+    deploy: { resources: { limits: { cpus: "0.25", memory: 160M } } }
 
   fusionauth:
     image: fusionauth/fusionauth-app:1.62.1
@@ -426,7 +441,7 @@ services:
       DATABASE_ROOT_USERNAME: postgres
       DATABASE_USERNAME: fusionauth
       FUSIONAUTH_APP_KICKSTART_FILE: /run/macro-kickstart/kickstart.json
-      FUSIONAUTH_APP_MEMORY: ${FUSIONAUTH_MEMORY:-512M}
+      FUSIONAUTH_APP_MEMORY: ${FUSIONAUTH_MEMORY:-384M}
       # Silent database setup. The admin UI is never published.
       FUSIONAUTH_APP_RUNTIME_MODE: development
       FUSIONAUTH_APP_URL: http://fusionauth:9011
@@ -450,6 +465,7 @@ services:
       fusionauth-db:
         condition: service_healthy
     networks: [edge, backend, fusionauth-db]
+    deploy: { resources: { limits: { cpus: "0.50", memory: 640M } } }
 
   # Sends the login codes and every other mail through your SMTP provider.
   mail-relay:
@@ -463,6 +479,7 @@ services:
       RELAYHOST_TLS_LEVEL: ${SMTP_RELAY_TLS_LEVEL:-encrypt}
       ALLOWED_SENDER_DOMAINS: ${MACRO_MAIL_DOMAIN}
     networks: [edge, backend]
+    deploy: { resources: { limits: { cpus: "0.05", memory: 64M } } }
 
   # ==========================================================================
   # Core services
@@ -507,6 +524,7 @@ services:
     networks:
       edge: { aliases: [document-storage-service] }
       backend: { aliases: [document-storage-service] }
+    deploy: { resources: { limits: { cpus: "0.40", memory: 256M } } }
 
   document_upload_finalizer:
     <<: *rust
@@ -547,6 +565,7 @@ services:
     networks:
       edge: { aliases: [image-proxy-service] }
       backend: { aliases: [image-proxy-service] }
+    deploy: { resources: { limits: { cpus: "0.25", memory: 192M } } }
 
   websocket_service:
     image: ${MACRO_IMAGE_PREFIX:-ghcr.io/dark1zinn/macro-selfhost}-websocket:${MACRO_VERSION:-main}
@@ -554,6 +573,7 @@ services:
     logging: *logging
     networks:
       edge: { aliases: [websocket-service] }
+    deploy: { resources: { limits: { cpus: "0.05", memory: 64M } } }
 
   # Realtime document sync: the Cloudflare worker under `wrangler dev`.
   sync_service:
@@ -580,6 +600,7 @@ services:
     networks:
       edge: { aliases: [sync-service] }
       backend: { aliases: [sync-service] }
+    deploy: { resources: { limits: { cpus: "0.25", memory: 384M } } }
 
   lexical_service:
     <<: *app
@@ -598,6 +619,7 @@ services:
     networks:
       edge: { aliases: [lexical-service] }
       backend: { aliases: [lexical-service] }
+    deploy: { resources: { limits: { cpus: "0.15", memory: 160M } } }
 
   # The public entrypoint: the app bundle plus every API on one origin.
   gateway:
@@ -637,6 +659,7 @@ services:
       authentication-service:
         condition: service_started
     networks: [edge]
+    deploy: { resources: { limits: { cpus: "0.25", memory: 96M } } }
 
   # ==========================================================================
   # Search. OpenSearch and its indices are core: document storage refuses to
@@ -651,7 +674,7 @@ services:
       discovery.type: single-node
       node.name: search
       bootstrap.memory_lock: "true"
-      OPENSEARCH_JAVA_OPTS: ${OPENSEARCH_JAVA_OPTS:--Xms512m -Xmx512m}
+      OPENSEARCH_JAVA_OPTS: ${OPENSEARCH_JAVA_OPTS:--Xms384m -Xmx384m}
     ulimits:
       memlock: { soft: -1, hard: -1 }
       nofile: { soft: 65536, hard: 65536 }
@@ -664,6 +687,7 @@ services:
       retries: 60
       start_period: 60s
     networks: [backend]
+    deploy: { resources: { limits: { cpus: "0.50", memory: 832M } } }
 
   init-search:
     <<: [*one-shot, *app]
@@ -687,6 +711,7 @@ services:
     networks:
       edge: { aliases: [search-processing-service] }
       backend: { aliases: [search-processing-service] }
+    deploy: { resources: { limits: { cpus: "0.25", memory: 192M } } }
 
   # ==========================================================================
   # The agent harness is core: besides agents and chat it serves onboarding
@@ -704,6 +729,7 @@ services:
     networks:
       edge: { aliases: [agent-harness-service] }
       backend: { aliases: [agent-harness-service] }
+    deploy: { resources: { limits: { cpus: "0.25", memory: 192M } } }
 
   # ==========================================================================
   # Profile `ai`: AI document editing
@@ -724,6 +750,7 @@ services:
     networks:
       edge: { aliases: [ai-editing-worker] }
       backend: { aliases: [ai-editing-worker] }
+    deploy: { resources: { limits: { cpus: "0.50", memory: 576M } } }
 
   # ==========================================================================
   # Profile `email`: Gmail and Google Calendar
@@ -771,6 +798,7 @@ services:
     restart: on-failure
     stop_grace_period: 120s
     command: ["/app/out/whatsapp_session_service"]
+    deploy: { resources: { limits: { cpus: "0.25", memory: 256M } } }
 
   slack_import_worker:
     <<: *rust
@@ -830,6 +858,7 @@ services:
     networks:
       edge: { aliases: [livekit] }
       backend: { aliases: [livekit] }
+    deploy: { resources: { limits: { cpus: "0.50", memory: 512M } } }
 
   # ==========================================================================
   # Profile `observability`: traces, logs and metrics from every service in
@@ -854,6 +883,7 @@ services:
     volumes:
       - lgtm_data:/data
     networks: [edge, backend]
+    deploy: { resources: { limits: { cpus: "0.50", memory: 768M } } }
 
   # ==========================================================================
   # Profile `mailcatcher`: keep every outgoing mail (login codes included) in
@@ -869,6 +899,7 @@ services:
     logging: *logging
     # Internal only: the relay and the auth service reach it on `backend`.
     networks: [backend]
+    deploy: { resources: { limits: { cpus: "0.05", memory: 64M } } }
 
   # ==========================================================================
   # Profile `https`: automatic Let's Encrypt TLS in front of the gateway
@@ -893,6 +924,7 @@ services:
       gateway:
         condition: service_started
     networks: [edge]
+    deploy: { resources: { limits: { cpus: "0.10", memory: 64M } } }
 
 networks:
   # Containers that talk to the outside world (and the gateway).
