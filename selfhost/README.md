@@ -192,9 +192,12 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d
 Only images of active profiles are built. Set `COMPOSE_PROFILES` before
 building `search` or `ai`. The Rust and web builds need about 16 GB of RAM
 and 40 GB of disk; they run at low CPU priority, and `CARGO_BUILD_JOBS=4`
-caps their parallelism on a host doing other work. To publish to your own
-registry, set `MACRO_IMAGE_PREFIX` and run `docker compose ... push`. In a
-fork, pushes to `main` publish the images compose pulls by default (`main`);
+caps their parallelism on a host doing other work. The hosted **Self-host
+images** workflow builds the Rust images with `CARGO_BUILD_JOBS=2` and keeps
+Docker's data under `/mnt`, because the runner's root disk is small. To
+publish to your own registry, set `MACRO_IMAGE_PREFIX` and run
+`docker compose ... push`. In a fork, pushes to `main` publish the images
+compose pulls by default (`main`);
 run the **Self-host images** workflow by hand on any other branch to publish
 that branch's images under its name, then set `MACRO_VERSION` to it. A
 manual run builds the groups listed in its `images` input (`rust`, `gateway`,

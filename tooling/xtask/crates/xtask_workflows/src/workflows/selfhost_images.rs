@@ -28,18 +28,24 @@ pub struct Image {
     pub target: Option<&'static str>,
 }
 
+/// The Dockerfile both Rust images build from.
+const RUST_DOCKERFILE: &str = "selfhost/docker/rust.Dockerfile";
+/// Parallel rustc jobs for that build. The hosted runner's 16 GB memory and
+/// 4 vCPUs failed at the default (every core); two stays within memory.
+const RUST_CARGO_BUILD_JOBS: u32 = 2;
+
 /// The two images built from the Rust workspace share one builder stage.
 pub const RUST: &[Image] = &[
     Image {
         name: "services",
         context: ".",
-        dockerfile: "selfhost/docker/rust.Dockerfile",
+        dockerfile: RUST_DOCKERFILE,
         target: Some("services"),
     },
     Image {
         name: "init",
         context: ".",
-        dockerfile: "selfhost/docker/rust.Dockerfile",
+        dockerfile: RUST_DOCKERFILE,
         target: Some("init"),
     },
 ];
@@ -130,6 +136,8 @@ fn job(group: &str, name: &str, images: &[Image]) -> Job {
                 .packages(Level::Write),
         )
         .add_step(steps::checkout(false, false))
+        .add_step(monitor_start())
+        .add_step(docker_storage())
         .add_step(free_disk())
         .add_step(image_prefix())
         .add_step(setup_buildx())
@@ -137,6 +145,7 @@ fn job(group: &str, name: &str, images: &[Image]) -> Job {
     images
         .iter()
         .fold(job, |job, image| job.add_step(build_push(image)))
+        .add_step(monitor_report())
 }
 
 /// The hosted runner's ~14 GB of free disk does not fit a release build of
@@ -147,6 +156,60 @@ fn free_disk() -> Step<Run> {
         docker system prune -af
         df -h /
     "#})
+}
+
+/// Docker's data root sits on the hosted runner's ~14 GB root disk, which the
+/// Rust build fills; `/mnt` has ~70 GB free. Moves the data root there before
+/// buildx creates its builder, merging into any existing daemon.json.
+fn docker_storage() -> Step<Run> {
+    Step::new("Move Docker storage to /mnt").run(indoc::indoc! {r#"
+        df -h / /mnt
+        sudo systemctl stop docker.socket docker
+        sudo mkdir -p /mnt/docker
+        config='{"data-root": "/mnt/docker"}'
+        if [ -s /etc/docker/daemon.json ]; then
+          config="$(sudo jq --arg root /mnt/docker '. + {"data-root": $root}' /etc/docker/daemon.json)"
+        fi
+        echo "$config" | sudo tee /etc/docker/daemon.json >/dev/null
+        sudo systemctl start docker
+        docker info --format 'Docker root: {{.DockerRootDir}}'
+        df -h / /mnt
+    "#})
+}
+
+/// A background loop records disk and memory every minute in a file, so a runner
+/// that dies mid-build still shows its state. It stops after six hours, or when
+/// `monitor_report` kills it. Its stdio goes to the file: a background process
+/// holding the step's stdout can stall the step.
+fn monitor_start() -> Step<Run> {
+    Step::new("Start resource monitor").run(indoc::indoc! {r#"
+        log=/tmp/resource-monitor.log
+        : > "$log"
+        (
+          end=$((SECONDS + 21600))
+          while [ "$SECONDS" -lt "$end" ]; do
+            { date; df -h / /mnt; free -m; } || true
+            sleep 60
+          done
+        ) >> "$log" 2>&1 </dev/null &
+        echo "$!" > /tmp/resource-monitor.pid
+    "#})
+}
+
+/// Runs even when a build fails or the job is cancelled: stops the monitor and
+/// prints its log.
+fn monitor_report() -> Step<Run> {
+    let mut step = Step::new("Print resource log").run(indoc::indoc! {r#"
+        if [ -f /tmp/resource-monitor.pid ]; then
+          pid="$(cat /tmp/resource-monitor.pid)"
+          pkill -P "$pid" 2>/dev/null || true
+          kill "$pid" 2>/dev/null || true
+        fi
+        cat /tmp/resource-monitor.log 2>/dev/null || echo "no resource log"
+    "#});
+    // Runs even on failure or cancellation.
+    step = step.if_condition(Expression::new("always()"));
+    step
 }
 
 /// GHCR names must be lowercase; owners need not be. A ref name may hold
@@ -205,8 +268,17 @@ fn build_push(image: &Image) -> Step<Use> {
         // image's Rust build stage instead of compiling it again.
         .add_with(("cache-from", format!("type=gha,scope={scope}")))
         .add_with(("cache-to", format!("type=gha,scope={scope},mode=max")));
-    match image.target {
+    let step = match image.target {
         Some(target) => step.add_with(("target", target)),
         None => step,
+    };
+    // Init reuses the services build stage, so both pass the same args to hit its cache.
+    if image.dockerfile == RUST_DOCKERFILE {
+        step.add_with((
+            "build-args",
+            format!("CARGO_BUILD_JOBS={RUST_CARGO_BUILD_JOBS}"),
+        ))
+    } else {
+        step
     }
 }
