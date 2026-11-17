@@ -11,12 +11,12 @@ chrono = { workspace = true }
 csv = { workspace = true }
 entity_access = { path = "../entity_access", default-features = false }
 fusionauth = { path = "../fusionauth" }
+invite_email = { path = "../invite_email" }
 macro_env_var = { path = "../macro_env_var" }
 macro_user_id = { path = "../macro_user_id" }
 model-entity = { path = "../model-entity" }
 non_empty = { path = "../non_empty" }
-# `outbound` too: with `ports` alone referral leaves an adapter helper unused.
-referral = { path = "../referral", default-features = false, features = ["outbound"] }
+notification = { path = "../notification", default-features = false }
 roles_and_permissions = { path = "../roles_and_permissions" }
 serde_json = { workspace = true }
 sqlx = { workspace = true, features = ["json", "uuid"] }

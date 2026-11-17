@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT NULLIF(TRIM(CONCAT_WS(' ', NULLIF(mui.first_name, 'N/A'),\n                                               NULLIF(mui.last_name, 'N/A'))), '') AS \"name?: String\"\n               FROM macro_user_info mui\n               JOIN \"User\" u ON u.macro_user_id = mui.macro_user_id\n               WHERE u.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name?: String",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "debb499238f59cd8bf73301174e302687be724525a1fdf74b3a045b6b6058fbe"
+}

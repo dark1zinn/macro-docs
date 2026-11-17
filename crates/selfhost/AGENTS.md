@@ -15,21 +15,25 @@ signups. Every admin action is audited. Off unless `MACRO_SELF_HOSTED=true`.
 ## Scope
 
 - Owns: entitlement roles on account creation and startup backfill, root
-  claim, signup policy and allowlist, server invitations to allowed emails,
-  the instance-wide view of workspace invite links and email invites (revoke,
-  resend), admin user listing, promotion, disabling, the admin audit log and
-  its CSV export (`src/export.rs`).
+  claim, signup policy and allowlist, server invitations to allowed emails
+  (at most one per address per week, tracked in `last_invited_at`), the
+  instance-wide view of workspace invite links and email invites (revoke,
+  resend, resend inside the window), admin user listing, promotion,
+  disabling, the admin audit log and its CSV export (`src/export.rs`).
 - Not here: HTTP routes and the login/webhook hooks →
   `services/authentication_service/src/api/selfhost_admin.rs`; schema →
   `crates/macro_db_client/migrations/*_selfhost_*.sql`; workspace invite rules
-  and emails → `crates/teams`.
+  and emails → `crates/teams` (the immediate resend is
+  `teams::domain::team_service::invite_resend`); the server invitation email →
+  `invite_email::ServerInvite`.
 
 ## Boundaries
 
 - Depends on: `roles_and_permissions` (role grants), `fusionauth`
   (deactivate/reactivate), `teams` and `entity_access` (workspace invites),
-  `referral` (the "join Macro" email), MacroDB. Upstream crates are used
-  through their `ports` features only.
+  `notification` and `invite_email` (the server invitation email, which has
+  no referral code), MacroDB. Upstream crates are used through their `ports`
+  features only.
 - Used by: `authentication_service` only.
 
 ## Checks
@@ -52,3 +56,8 @@ signups. Every admin action is audited. Off unless `MACRO_SELF_HOSTED=true`.
   `outbound/teams.rs` issues a workspace-admin `EntityAccessReceipt` naming
   the instance admin, only after the domain confirmed that role. Reads of every
   workspace's links and invites query MacroDB directly.
+- Fork additions inside upstream crates, kept additive for rebases:
+  `teams/src/domain/team_service/invite_resend.rs` (+ its `mod` line),
+  `SendNotificationRequest::with_email_outside_rate_limit` in `notification`,
+  `invite_email/src/server_invite.rs` with `templates/server_invite.html`, and
+  `ServerInvite` in `model_notifications`' digest block list.
