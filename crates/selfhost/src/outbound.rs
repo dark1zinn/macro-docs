@@ -3,6 +3,6 @@
 pub mod fusionauth;
 pub mod pg;
 pub mod pg_audit;
-pub mod referral;
 pub mod roles;
+pub mod server_invites;
 pub mod teams;

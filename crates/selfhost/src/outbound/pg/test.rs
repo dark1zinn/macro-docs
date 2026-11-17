@@ -80,3 +80,73 @@ async fn disabling_the_only_active_admin_is_refused(pool: PgPool) {
 
     assert!(!marked);
 }
+
+const WEEK: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 3600);
+
+/// Two admins inviting the same address at once send one invitation; the
+/// other learns when the next one is possible.
+#[sqlx::test(migrator = "macro_db_migrator::MACRO_DB_MIGRATIONS")]
+async fn concurrent_invitations_to_one_address_claim_once(pool: PgPool) {
+    let repo = PgSelfHostRepo::new(pool.clone());
+    assert!(
+        repo.add_allowed_email("new@example.com", "macro|a@example.com")
+            .await
+            .unwrap()
+    );
+    assert!(
+        !repo
+            .add_allowed_email("new@example.com", "macro|a@example.com")
+            .await
+            .unwrap()
+    );
+
+    let (a, b) = tokio::join!(
+        repo.claim_invite("new@example.com", WEEK),
+        repo.claim_invite("new@example.com", WEEK),
+    );
+
+    let claims = [a.unwrap(), b.unwrap()];
+    assert_eq!(
+        claims
+            .iter()
+            .filter(|c| **c == InviteClaim::Claimed(None))
+            .count(),
+        1,
+        "exactly one invitation must win the race: {claims:?}"
+    );
+    let invited_at = repo.list_allowed_emails().await.unwrap()[0]
+        .last_invited_at
+        .unwrap();
+    assert!(claims.contains(&InviteClaim::TooSoon(
+        invited_at + chrono::Duration::from_std(WEEK).unwrap()
+    )));
+    assert_eq!(
+        repo.claim_invite("stranger@example.com", WEEK)
+            .await
+            .unwrap(),
+        InviteClaim::NotAllowed
+    );
+}
+
+/// Putting back the previous time after a failed send lets the next
+/// invitation go out right away.
+#[sqlx::test(migrator = "macro_db_migrator::MACRO_DB_MIGRATIONS")]
+async fn a_restored_invitation_time_frees_the_address(pool: PgPool) {
+    let repo = PgSelfHostRepo::new(pool.clone());
+    repo.add_allowed_email("new@example.com", "macro|a@example.com")
+        .await
+        .unwrap();
+    let InviteClaim::Claimed(previous) = repo.claim_invite("new@example.com", WEEK).await.unwrap()
+    else {
+        panic!("the first invitation must be claimed");
+    };
+
+    repo.restore_last_invited("new@example.com", previous)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        repo.claim_invite("new@example.com", WEEK).await.unwrap(),
+        InviteClaim::Claimed(None)
+    );
+}

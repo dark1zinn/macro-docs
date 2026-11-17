@@ -306,7 +306,7 @@ pub(crate) struct ApiContext {
             selfhost::composition::SelfHost<
                 UserRolesAndPermissionsServiceImpl<MacroDB>,
                 TeamsServiceType,
-                ReferralServiceType,
+                NotificationIngressType,
             >,
         >,
     >,

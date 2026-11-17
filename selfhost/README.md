@@ -50,13 +50,19 @@ built with `VITE_SELF_HOSTED=true`):
 - **Signups are invite-only after that.** A new account is accepted when its
   email is on the allowed list or has a pending team invite. The
   administrator changes this, allows emails (optionally emailing each person
-  an invitation with a sign-up link), promotes other administrators and
-  disables accounts under **Settings → Self-host**.
+  an invitation with a sign-up link to this server), promotes other
+  administrators and disables accounts under **Settings → Self-host**. One
+  address gets at most one invitation a week; the panel shows when the next
+  one can go out. If the invitation can't be sent, an address allowed for it
+  is taken off the list again.
 - **The administrator sees every way in.** The **Invites** section on the
   same page lists every workspace invite link (with who created it, and a copy
   button) and every pending workspace email invite, and can revoke them, one
-  or all, or resend an invite. A workspace that limits invites to its own
-  admins refuses resends from the server administrator.
+  or all, or resend an invite. Resends are normally held for an hour after the
+  last email; **Resend now** sends one sooner after a confirmation. Revoking
+  all keeps going past a failure and reports which items failed. A workspace
+  that limits invites to its own admins refuses resends from the server
+  administrator.
 - **Administrator actions are audited.** Each one is recorded before it runs,
   with who did it and to whom, then marked succeeded or failed. Entries can't
   be deleted, and a recorded outcome can't be changed. The **Audit log**

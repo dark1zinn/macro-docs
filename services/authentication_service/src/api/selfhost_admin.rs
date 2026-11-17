@@ -14,8 +14,8 @@ use axum::{
 use chrono::{DateTime, Utc};
 use macro_authorization::{MacroAuthorizationExtractor, UserOnly};
 use selfhost::domain::model::{
-    AuditAction, AuditEntry, AuditQuery, AuditStatus, InvitesOverview, SelfHostError, SignupPolicy,
-    UserEntry,
+    AuditAction, AuditEntry, AuditQuery, AuditStatus, BulkOutcome, InvitesOverview, SelfHostError,
+    SignupPolicy, UserEntry,
 };
 use serde::{Deserialize, Serialize};
 
@@ -58,6 +58,9 @@ struct UsersResponse {
 struct AllowedEmailItem {
     email: String,
     created_at: DateTime<Utc>,
+    last_invited_at: Option<DateTime<Utc>>,
+    /// When the address can be sent a server invitation again; absent when it can be now.
+    invitable_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Serialize)]
@@ -106,9 +109,40 @@ struct InviteBody {
     invite_id: uuid::Uuid,
 }
 
+#[derive(Deserialize)]
+struct ResendBody {
+    invite_id: uuid::Uuid,
+    /// Send it even inside its resend window.
+    #[serde(default)]
+    now: bool,
+}
+
+#[derive(Serialize)]
+struct BulkFailureItem {
+    target: String,
+    error: String,
+}
+
 #[derive(Serialize)]
 struct RevokedResponse {
     revoked: usize,
+    failed: Vec<BulkFailureItem>,
+}
+
+impl From<BulkOutcome> for RevokedResponse {
+    fn from(outcome: BulkOutcome) -> Self {
+        Self {
+            revoked: outcome.succeeded,
+            failed: outcome
+                .failures
+                .into_iter()
+                .map(|f| BulkFailureItem {
+                    target: f.target,
+                    error: f.error,
+                })
+                .collect(),
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -313,13 +347,21 @@ async fn get_signups(
         .get_signups(user.authorization.macro_user_id.as_ref())
         .await
         .map_err(error_response)?;
+    let interval = chrono::Duration::from_std(svc.server_invite_interval())
+        .map_err(|e| error_response(SelfHostError::Internal(e.into())))?;
+    let now = Utc::now();
     Ok(Json(SignupsResponse {
         policy: policy.as_str(),
         allowed_emails: allowed
             .into_iter()
             .map(|a| AllowedEmailItem {
+                invitable_at: a
+                    .last_invited_at
+                    .map(|at| at + interval)
+                    .filter(|at| *at > now),
                 email: a.email,
                 created_at: a.created_at,
+                last_invited_at: a.last_invited_at,
             })
             .collect(),
     }))
@@ -399,11 +441,11 @@ async fn revoke_all_invite_links(
     user: User,
 ) -> Result<Json<RevokedResponse>, Response> {
     let svc = ctx.selfhost.clone().ok_or_else(disabled_response)?;
-    let revoked = svc
+    let outcome = svc
         .revoke_all_invite_links(user.authorization.macro_user_id.as_ref())
         .await
         .map_err(error_response)?;
-    Ok(Json(RevokedResponse { revoked }))
+    Ok(Json(outcome.into()))
 }
 
 async fn revoke_invite(
@@ -423,22 +465,26 @@ async fn revoke_all_invites(
     user: User,
 ) -> Result<Json<RevokedResponse>, Response> {
     let svc = ctx.selfhost.clone().ok_or_else(disabled_response)?;
-    let revoked = svc
+    let outcome = svc
         .revoke_all_invites(user.authorization.macro_user_id.as_ref())
         .await
         .map_err(error_response)?;
-    Ok(Json(RevokedResponse { revoked }))
+    Ok(Json(outcome.into()))
 }
 
 async fn resend_invite(
     State(ctx): State<ApiContext>,
     user: User,
-    Json(body): Json<InviteBody>,
+    Json(body): Json<ResendBody>,
 ) -> Result<StatusCode, Response> {
     let svc = ctx.selfhost.clone().ok_or_else(disabled_response)?;
-    svc.resend_invite(user.authorization.macro_user_id.as_ref(), body.invite_id)
-        .await
-        .map_err(error_response)?;
+    svc.resend_invite(
+        user.authorization.macro_user_id.as_ref(),
+        body.invite_id,
+        body.now,
+    )
+    .await
+    .map_err(error_response)?;
     Ok(StatusCode::NO_CONTENT)
 }
 

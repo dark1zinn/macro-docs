@@ -19,8 +19,9 @@ use macro_user_id::email::Email;
 use macro_user_id::user_id::MacroUserIdStr;
 use model_entity::EntityType;
 use sqlx::PgPool;
-use teams::domain::model::InviteUsersToTeamError;
+use teams::domain::model::{InviteUsersToTeamError, TeamError};
 use teams::domain::team_repo::{TeamInviteLinkService, TeamService};
+use teams::domain::team_service::invite_resend::ImmediateInviteResender;
 use teams::domain::team_service::invite_resend_interval;
 use uuid::Uuid;
 
@@ -117,7 +118,7 @@ impl From<LinkRow> for InviteLinkRecord {
 #[async_trait]
 impl<T> WorkspaceInvites for TeamsInvites<T>
 where
-    T: TeamService + TeamInviteLinkService,
+    T: TeamService + TeamInviteLinkService + ImmediateInviteResender,
 {
     async fn list_links(&self) -> anyhow::Result<Vec<InviteLinkRecord>> {
         let rows = sqlx::query_as!(
@@ -195,22 +196,34 @@ where
         &self,
         admin: &str,
         invite: &PendingInvite,
+        now: bool,
     ) -> Result<bool, SelfHostError> {
-        let receipt = admin_receipt::<MemberTeamRole>(admin, invite.team_id)?;
-        let email = Email::parse_from_str(&invite.email)
-            .map_err(|e| anyhow::anyhow!("invalid stored invite email: {e}"))?
-            .lowercase();
-        let emails = [email];
-        let emails = non_empty::NonEmpty::new(&emails[..])
-            .map_err(|_| anyhow::anyhow!("no address to invite"))?;
-        // Inviting an address that already has a pending invite emails it
-        // again, unless it was emailed inside the resend window.
-        match self
-            .teams
-            .invite_users_to_team(receipt, emails, invite.is_agent)
-            .await
-        {
-            Ok(sent) => Ok(!sent.is_empty()),
+        let sent = if now {
+            let receipt = admin_receipt::<AdminTeamRole>(admin, invite.team_id)?;
+            self.teams
+                .resend_invite_now(receipt, invite.invite_id)
+                .await
+                .map(|()| true)
+        } else {
+            let receipt = admin_receipt::<MemberTeamRole>(admin, invite.team_id)?;
+            let email = Email::parse_from_str(&invite.email)
+                .map_err(|e| anyhow::anyhow!("invalid stored invite email: {e}"))?
+                .lowercase();
+            let emails = [email];
+            let emails = non_empty::NonEmpty::new(&emails[..])
+                .map_err(|_| anyhow::anyhow!("no address to invite"))?;
+            // Inviting an address that already has a pending invite emails it
+            // again, unless it was emailed inside the resend window.
+            self.teams
+                .invite_users_to_team(receipt, emails, invite.is_agent)
+                .await
+                .map(|sent| !sent.is_empty())
+        };
+        match sent {
+            Ok(sent) => Ok(sent),
+            Err(InviteUsersToTeamError::TeamError(TeamError::TeamInviteDoesNotExist)) => {
+                Err(SelfHostError::NotFound("invite"))
+            }
             Err(InviteUsersToTeamError::NonAdminInvitesDisabled) => Err(SelfHostError::Conflict(
                 "this workspace only lets its own admins send invites; ask one of them to resend it"
                     .into(),

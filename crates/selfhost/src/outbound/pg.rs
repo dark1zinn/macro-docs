@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use macro_user_id::user_id::MacroUserIdStr;
 use sqlx::{PgPool, Postgres, Transaction};
 
-use crate::domain::model::{AllowedEmail, SignupPolicy, UserRecord};
+use crate::domain::model::{AllowedEmail, InviteClaim, SignupPolicy, UserRecord};
 use crate::domain::ports::SelfHostRepo;
 
 /// Postgres-backed self-host repository over the MacroDB pool.
@@ -251,7 +251,7 @@ impl SelfHostRepo for PgSelfHostRepo {
 
     async fn list_allowed_emails(&self) -> anyhow::Result<Vec<AllowedEmail>> {
         let rows = sqlx::query!(
-            r#"SELECT email AS "email!", created_at AS "created_at!"
+            r#"SELECT email AS "email!", created_at AS "created_at!", last_invited_at
                FROM selfhost_signup_allowlist
                ORDER BY created_at ASC, email ASC"#
         )
@@ -262,15 +262,64 @@ impl SelfHostRepo for PgSelfHostRepo {
             .map(|r| AllowedEmail {
                 email: r.email,
                 created_at: r.created_at,
+                last_invited_at: r.last_invited_at,
             })
             .collect())
     }
 
-    async fn add_allowed_email(&self, email: &str, by: &str) -> anyhow::Result<()> {
-        sqlx::query!(
+    async fn add_allowed_email(&self, email: &str, by: &str) -> anyhow::Result<bool> {
+        let added = sqlx::query!(
             "INSERT INTO selfhost_signup_allowlist (email, added_by) VALUES ($1, $2) ON CONFLICT (email) DO NOTHING",
             email,
             by
+        )
+        .execute(&self.pool)
+        .await?
+        .rows_affected();
+        Ok(added > 0)
+    }
+
+    async fn claim_invite(
+        &self,
+        email: &str,
+        interval: std::time::Duration,
+    ) -> anyhow::Result<InviteClaim> {
+        let mut tx = self.pool.begin().await?;
+        let Some(row) = sqlx::query!(
+            r#"SELECT last_invited_at, now() AS "now!"
+               FROM selfhost_signup_allowlist WHERE email = $1 FOR UPDATE"#,
+            email
+        )
+        .fetch_optional(&mut *tx)
+        .await?
+        else {
+            return Ok(InviteClaim::NotAllowed);
+        };
+        let interval = chrono::Duration::from_std(interval)?;
+        if let Some(last) = row.last_invited_at
+            && last + interval > row.now
+        {
+            return Ok(InviteClaim::TooSoon(last + interval));
+        }
+        sqlx::query!(
+            "UPDATE selfhost_signup_allowlist SET last_invited_at = now() WHERE email = $1",
+            email
+        )
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(InviteClaim::Claimed(row.last_invited_at))
+    }
+
+    async fn restore_last_invited(
+        &self,
+        email: &str,
+        previous: Option<DateTime<Utc>>,
+    ) -> anyhow::Result<()> {
+        sqlx::query!(
+            "UPDATE selfhost_signup_allowlist SET last_invited_at = $2 WHERE email = $1",
+            email,
+            previous
         )
         .execute(&self.pool)
         .await?;

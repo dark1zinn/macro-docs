@@ -916,7 +916,7 @@ async fn run_server() -> anyhow::Result<()> {
             user_roles_and_permissions_service.clone(),
             Arc::new(auth_client.clone()),
             teams_service.clone(),
-            referral_service.clone(),
+            notification_ingress_service.clone(),
         );
         handle
             .backfill()

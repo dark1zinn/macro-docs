@@ -1,14 +1,16 @@
 //! Ports the self-host domain depends on.
 
 use std::collections::HashSet;
+use std::time::Duration;
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use roles_and_permissions::domain::model::RoleId;
 use uuid::Uuid;
 
 use super::model::{
-    AllowedEmail, AuditEntry, AuditQuery, AuditStatus, InviteLinkRecord, NewAuditEntry,
-    PendingInvite, SelfHostError, SignupPolicy, UserRecord,
+    AllowedEmail, AuditEntry, AuditQuery, AuditStatus, InviteClaim, InviteLinkRecord,
+    NewAuditEntry, PendingInvite, SelfHostError, SignupPolicy, UserRecord,
 };
 
 /// Persistence for self-host state.
@@ -52,8 +54,21 @@ pub trait SelfHostRepo: Send + Sync + 'static {
     /// Lists explicitly allowed signup emails.
     async fn list_allowed_emails(&self) -> anyhow::Result<Vec<AllowedEmail>>;
 
-    /// Adds an allowed signup email. Idempotent.
-    async fn add_allowed_email(&self, email: &str, by: &str) -> anyhow::Result<()>;
+    /// Adds an allowed signup email. Idempotent; returns `true` when this call added it.
+    async fn add_allowed_email(&self, email: &str, by: &str) -> anyhow::Result<bool>;
+
+    /// Records that `email` is being invited now, unless it is not allowed or
+    /// was invited less than `interval` ago. Concurrent claims are serialized,
+    /// so one invitation goes out.
+    async fn claim_invite(&self, email: &str, interval: Duration) -> anyhow::Result<InviteClaim>;
+
+    /// Puts back an allowed email's previous invitation time after its
+    /// invitation could not be sent.
+    async fn restore_last_invited(
+        &self,
+        email: &str,
+        previous: Option<DateTime<Utc>>,
+    ) -> anyhow::Result<()>;
 
     /// Removes an allowed signup email. Idempotent.
     async fn remove_allowed_email(&self, email: &str) -> anyhow::Result<()>;
@@ -117,17 +132,21 @@ pub trait WorkspaceInvites: Send + Sync + 'static {
     -> Result<(), SelfHostError>;
 
     /// Emails a pending invite again. Returns `false` when it was emailed too
-    /// recently and nothing was sent.
+    /// recently and nothing was sent; `now` sends it inside that window too.
     async fn resend_invite(
         &self,
         admin: &str,
         invite: &PendingInvite,
+        now: bool,
     ) -> Result<bool, SelfHostError>;
 }
 
 /// Invitations to join this server, for people who have no account yet.
 #[async_trait]
 pub trait ServerInviter: Send + Sync + 'static {
+    /// The least time between two invitations to one address.
+    fn resend_interval(&self) -> Duration;
+
     /// Emails `email` an invitation to sign up, sent on behalf of `admin`.
     async fn invite(&self, admin: &str, email: &str) -> anyhow::Result<()>;
 }

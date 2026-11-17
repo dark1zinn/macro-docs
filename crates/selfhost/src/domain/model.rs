@@ -66,6 +66,38 @@ pub struct AllowedEmail {
     pub email: String,
     /// When the grant was created.
     pub created_at: DateTime<Utc>,
+    /// When the address was last sent a server invitation, if ever.
+    pub last_invited_at: Option<DateTime<Utc>>,
+}
+
+/// The outcome of claiming the right to send an allowed email a server invitation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InviteClaim {
+    /// The address may be invited now, and is recorded as invited. Holds the
+    /// previous invitation time, to put back if the send fails.
+    Claimed(Option<DateTime<Utc>>),
+    /// The address was invited too recently; it can be invited again at this time.
+    TooSoon(DateTime<Utc>),
+    /// The address is not on the allowlist.
+    NotAllowed,
+}
+
+/// What a bulk admin action did: how many items succeeded, and why the rest failed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BulkOutcome {
+    /// Items the action succeeded on.
+    pub succeeded: usize,
+    /// Items it failed on, each with its reason.
+    pub failures: Vec<BulkFailure>,
+}
+
+/// One item a bulk admin action failed on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BulkFailure {
+    /// What the item was: a workspace name, or an invited address.
+    pub target: String,
+    /// Why it failed.
+    pub error: String,
 }
 
 /// A workspace's shareable invite link.
@@ -102,7 +134,8 @@ pub struct PendingInvite {
     pub created_at: DateTime<Utc>,
     /// When the invite was last emailed.
     pub last_sent_at: DateTime<Utc>,
-    /// The earliest time emailing it again is not rate-limited.
+    /// The earliest time emailing it again is not rate-limited. An admin can
+    /// override it and resend sooner.
     pub resendable_at: DateTime<Utc>,
 }
 
