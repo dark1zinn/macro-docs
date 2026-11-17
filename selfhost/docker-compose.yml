@@ -867,7 +867,8 @@ services:
     image: axllent/mailpit:v1.20
     restart: unless-stopped
     logging: *logging
-    networks: [edge]
+    # Internal only: the relay and the auth service reach it on `backend`.
+    networks: [backend]
 
   # ==========================================================================
   # Profile `https`: automatic Let's Encrypt TLS in front of the gateway
