@@ -371,6 +371,10 @@ services:
       FLOCI_DEFAULT_REGION: us-east-1
       FLOCI_STORAGE_MODE: persistent
       FLOCI_STORAGE_PERSISTENT_PATH: /app/data
+      # Relay SES sends to mail-relay; without these floci only stores them.
+      FLOCI_SERVICES_SES_SMTP_HOST: mail-relay
+      FLOCI_SERVICES_SES_SMTP_PORT: "587"
+      FLOCI_SERVICES_SES_SMTP_STARTTLS: DISABLED
     volumes:
       - floci_data:/app/data
     networks:
