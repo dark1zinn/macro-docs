@@ -58,14 +58,13 @@ built with `VITE_SELF_HOSTED=true`):
   Mailpit itself is not published.
 - **Signups are invite-only after that.** A new account is accepted when its
   email is on the allowed list or has a pending team invite, or when the
-  person signs up through a workspace's current invite link (revoking the
-  link closes that way in). The
-  administrator changes this, allows emails (optionally emailing each person
-  an invitation with a sign-up link to this server), promotes other
-  administrators and disables accounts under **Settings → Self-host**. One
-  address gets at most one invitation a week; the panel shows when the next
-  one can go out. If the invitation can't be sent, an address allowed for it
-  is taken off the list again.
+  person signs up through a workspace's current invite link; revoking the
+  link stops that. The administrator changes this, allows emails (optionally
+  emailing each person an invitation with a sign-up link to this server),
+  promotes other administrators and disables accounts under **Settings →
+  Self-host**. One address gets at most one invitation a week; the panel
+  shows when the next one can go out. If the invitation can't be sent, an
+  address allowed for it is taken off the list again.
 - **The administrator sees every way in.** The **Invites** section on the
   same page lists every workspace invite link (with who created it, and a copy
   button) and every pending workspace email invite, and can revoke them, one
