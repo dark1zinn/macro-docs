@@ -72,13 +72,17 @@ pub async fn handler(
             (StatusCode::UNAUTHORIZED, "no passwordless login found").into_response()
         })?;
 
-    if passwordless_code != code {
+    // Self-host: until root is claimed, the operator's setup token stands in
+    // for the emailed code.
+    let setup_token = passwordless_code != code
+        && crate::api::selfhost_admin::setup_token_accepted(&ctx, &code).await;
+    if passwordless_code != code && !setup_token {
         return Err((StatusCode::UNAUTHORIZED, "invalid code").into_response());
     }
 
     let passwordless_response = ctx
         .auth_client
-        .complete_passwordless_login(&code)
+        .complete_passwordless_login(&passwordless_code)
         .await
         .map_err(|e| {
             tracing::error!(error=?e, "complete_passwordless_login: unable to complete passwordless login");
@@ -108,6 +112,10 @@ pub async fn handler(
             tracing::error!("passwordless code does not match");
             return Err((StatusCode::UNAUTHORIZED, "invalid code").into_response());
         }
+    }
+
+    if setup_token {
+        crate::api::selfhost_admin::claim_root_with_setup_token(&ctx, &email).await;
     }
 
     cookies.add(create_access_token_cookie(&passwordless_response.token));

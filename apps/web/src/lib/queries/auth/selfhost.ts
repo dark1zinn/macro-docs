@@ -19,6 +19,7 @@ const selfHostKeys = {
   signups: ['selfhost', 'admin', 'signups'] as const,
   invites: ['selfhost', 'admin', 'invites'] as const,
   audit: ['selfhost', 'admin', 'audit'] as const,
+  mail: ['selfhost', 'admin', 'mail'] as const,
 };
 
 /** Every admin action changes state and adds an audit entry. */
@@ -141,6 +142,49 @@ export function useAllowedEmailMutation() {
         input.remove
           ? selfHostClient.removeAllowedEmail(input.email)
           : selfHostClient.addAllowedEmail(input.email, input.notify ?? false)
+      ),
+    onSettled: invalidateAdmin,
+  }));
+}
+
+const MAIL_PAGE = 50;
+
+const mailQueryOptions = (search: string) =>
+  infiniteQueryOptions({
+    queryKey: [...selfHostKeys.mail, 'list', search] as const,
+    queryFn: ({ pageParam }) =>
+      throwOnErr(() => selfHostClient.mail(search, pageParam)),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, pages) => {
+      const loaded = pages.length * MAIL_PAGE;
+      return lastPage.messages.length > 0 && loaded < lastPage.total
+        ? loaded
+        : undefined;
+    },
+    // New sign-in codes arrive while an admin waits for them.
+    refetchInterval: 15_000,
+  });
+
+/** Captured outgoing mail matching `search`, newest first, a page at a time. */
+export function useSelfHostMailQuery(search: Accessor<string>) {
+  return useInfiniteQuery(() => mailQueryOptions(search()));
+}
+
+/** One captured message with its bodies; nothing is fetched while `id` is empty. */
+export function useSelfHostMailMessageQuery(id: Accessor<string | undefined>) {
+  return useQuery(() => ({
+    queryKey: [...selfHostKeys.mail, 'message', id()] as const,
+    queryFn: () => throwOnErr(() => selfHostClient.mailMessage(id() ?? '')),
+    enabled: Boolean(id()),
+  }));
+}
+
+/** Deletes one captured message, or every one when `id` is absent. */
+export function useDeleteSelfHostMailMutation() {
+  return useMutation(() => ({
+    mutationFn: (id?: string) =>
+      throwOnErr(() =>
+        id ? selfHostClient.deleteMail(id) : selfHostClient.clearMail()
       ),
     onSettled: invalidateAdmin,
   }));

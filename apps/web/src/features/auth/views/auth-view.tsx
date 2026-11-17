@@ -1,3 +1,4 @@
+import { SELF_HOSTED } from '@core/constant/selfHosted';
 import { fireAndForget } from '@core/util/fireAndForget';
 import { Stepper } from '@ui/components/Stepper';
 import {
@@ -200,6 +201,7 @@ function VerifyStep(props: { login: EmailLogin }) {
       error={props.login.verifyError() ?? props.login.sendError()}
       onCodeInput={props.login.setCode}
       onVerify={props.login.verify}
+      onSetupToken={SELF_HOSTED ? props.login.verifySetupToken : undefined}
       onResend={() => fireAndForget(props.login.resend(), 'auth')}
       onBack={props.login.back}
     />

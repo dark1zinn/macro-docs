@@ -6,7 +6,7 @@ use crate::api::context::{ApiContext, AuthorizationService};
 use crate::api::signup_policy::signup_forbidden_response;
 use axum::{
     Json, Router,
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::{StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, post, put},
@@ -14,8 +14,8 @@ use axum::{
 use chrono::{DateTime, Utc};
 use macro_authorization::{MacroAuthorizationExtractor, UserOnly};
 use selfhost::domain::model::{
-    AuditAction, AuditEntry, AuditQuery, AuditStatus, BulkOutcome, InvitesOverview, SelfHostError,
-    SignupPolicy, UserEntry,
+    AuditAction, AuditEntry, AuditQuery, AuditStatus, BulkOutcome, CapturedMail, InvitesOverview,
+    MailQuery, SelfHostError, SignupPolicy, UserEntry,
 };
 use serde::{Deserialize, Serialize};
 
@@ -273,12 +273,64 @@ struct AuditResponse {
     next_before: Option<i64>,
 }
 
+#[derive(Deserialize)]
+struct MailParams {
+    search: Option<String>,
+    #[serde(default)]
+    start: u32,
+    limit: Option<u32>,
+}
+
+#[derive(Deserialize)]
+struct MailIdBody {
+    id: String,
+}
+
+#[derive(Serialize)]
+struct MailItem {
+    id: String,
+    from: String,
+    to: Vec<String>,
+    subject: String,
+    created_at: DateTime<Utc>,
+    snippet: String,
+}
+
+impl From<CapturedMail> for MailItem {
+    fn from(m: CapturedMail) -> Self {
+        Self {
+            id: m.id,
+            from: m.from,
+            to: m.to,
+            subject: m.subject,
+            created_at: m.created_at,
+            snippet: m.snippet,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct MailResponse {
+    messages: Vec<MailItem>,
+    total: u32,
+}
+
+#[derive(Serialize)]
+struct MailMessageResponse {
+    #[serde(flatten)]
+    mail: MailItem,
+    text: Option<String>,
+    /// Untrusted HTML; the panel renders it in a sandboxed frame.
+    html: Option<String>,
+}
+
 fn error_response(error: SelfHostError) -> Response {
     let (status, message) = match error {
         SelfHostError::Invalid(message) => (StatusCode::BAD_REQUEST, message),
         SelfHostError::Forbidden => (StatusCode::FORBIDDEN, "admin role required".into()),
         SelfHostError::NotFound(what) => (StatusCode::NOT_FOUND, format!("{what} not found")),
         SelfHostError::Conflict(message) => (StatusCode::CONFLICT, message),
+        SelfHostError::Unavailable(message) => (StatusCode::SERVICE_UNAVAILABLE, message),
         SelfHostError::Internal(error) => {
             tracing::error!(error=?error, "self-host operation failed");
             (StatusCode::INTERNAL_SERVER_ERROR, "internal error".into())
@@ -540,6 +592,71 @@ pub(crate) fn router_if_enabled(state: &ApiContext) -> Router<ApiContext> {
         .route("/selfhost/admin/invites/resend", post(resend_invite))
         .route("/selfhost/admin/audit", get(list_audit))
         .route("/selfhost/admin/audit/export", get(export_audit))
+        .route("/selfhost/admin/mail", get(list_mail))
+        .route("/selfhost/admin/mail/{id}", get(get_mail))
+        .route("/selfhost/admin/mail/delete", post(delete_mail))
+        .route("/selfhost/admin/mail/clear", post(clear_mail))
+}
+
+/// One page of the mail the server sent and Mailpit captured.
+async fn list_mail(
+    State(ctx): State<ApiContext>,
+    user: User,
+    Query(params): Query<MailParams>,
+) -> Result<Json<MailResponse>, Response> {
+    let svc = ctx.selfhost.clone().ok_or_else(disabled_response)?;
+    let page = svc
+        .list_captured_mail(
+            user.authorization.macro_user_id.as_ref(),
+            MailQuery {
+                search: params.search,
+                start: params.start,
+                limit: params.limit,
+            },
+        )
+        .await
+        .map_err(error_response)?;
+    Ok(Json(MailResponse {
+        messages: page.messages.into_iter().map(MailItem::from).collect(),
+        total: page.total,
+    }))
+}
+
+async fn get_mail(
+    State(ctx): State<ApiContext>,
+    user: User,
+    Path(id): Path<String>,
+) -> Result<Json<MailMessageResponse>, Response> {
+    let svc = ctx.selfhost.clone().ok_or_else(disabled_response)?;
+    let message = svc
+        .captured_message(user.authorization.macro_user_id.as_ref(), &id)
+        .await
+        .map_err(error_response)?;
+    Ok(Json(MailMessageResponse {
+        mail: message.mail.into(),
+        text: message.text,
+        html: message.html,
+    }))
+}
+
+async fn delete_mail(
+    State(ctx): State<ApiContext>,
+    user: User,
+    Json(body): Json<MailIdBody>,
+) -> Result<StatusCode, Response> {
+    let svc = ctx.selfhost.clone().ok_or_else(disabled_response)?;
+    svc.delete_captured_mail(user.authorization.macro_user_id.as_ref(), &body.id)
+        .await
+        .map_err(error_response)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn clear_mail(State(ctx): State<ApiContext>, user: User) -> Result<StatusCode, Response> {
+    let svc = ctx.selfhost.clone().ok_or_else(disabled_response)?;
+    svc.clear_captured_mail(user.authorization.macro_user_id.as_ref())
+        .await
+        .map_err(error_response)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn list_audit(
@@ -618,5 +735,30 @@ pub(crate) async fn signup_denied(ctx: &ApiContext, email: &str) -> Option<Respo
             tracing::error!(error=?error, "self-host signup check failed; denying");
             Some(signup_forbidden_response())
         }
+    }
+}
+
+/// Whether `code` is the self-host setup token and root is still unclaimed.
+/// `false` whenever self-host mode is off or the check fails.
+pub(crate) async fn setup_token_accepted(ctx: &ApiContext, code: &str) -> bool {
+    let Some(svc) = ctx.selfhost.as_ref() else {
+        return false;
+    };
+    svc.setup_token_accepted(code)
+        .await
+        .inspect_err(|error| tracing::error!(error=?error, "self-host setup token check failed"))
+        .unwrap_or(false)
+}
+
+/// Makes `email` root after it signed in with the setup token. The sign-in
+/// stands either way; a lost race leaves the account a regular user.
+pub(crate) async fn claim_root_with_setup_token(ctx: &ApiContext, email: &str) {
+    let Some(svc) = ctx.selfhost.as_ref() else {
+        return;
+    };
+    match svc.claim_root_with_setup_token(email).await {
+        Ok(true) => {}
+        Ok(false) => tracing::warn!("setup token sign-in did not claim root; it was already taken"),
+        Err(error) => tracing::error!(error=?error, "self-host root claim failed"),
     }
 }

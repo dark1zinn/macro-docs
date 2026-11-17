@@ -157,6 +157,101 @@ pub struct InvitesOverview {
     pub invites: Vec<PendingInvite>,
 }
 
+/// The secret an operator configures so that only they can claim root: while
+/// no root admin exists, signing in with it instead of the emailed code makes
+/// that account root.
+#[derive(Clone)]
+pub struct SetupToken(String);
+
+impl SetupToken {
+    /// The shortest accepted token; long enough that guessing is hopeless.
+    pub const MIN_LEN: usize = 32;
+
+    /// Validates a configured token: at least [`Self::MIN_LEN`] characters of
+    /// letters, digits, `-` or `_`, so it travels unchanged in a URL path.
+    pub fn parse(raw: &str) -> Result<Self, String> {
+        let token = raw.trim();
+        if token.len() < Self::MIN_LEN {
+            return Err(format!(
+                "the setup token must be at least {} characters",
+                Self::MIN_LEN
+            ));
+        }
+        if !token
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err("the setup token may only contain letters, digits, '-' and '_'".into());
+        }
+        Ok(Self(token.to_owned()))
+    }
+
+    /// Whether `candidate` is this token, compared in constant time.
+    pub fn matches(&self, candidate: &str) -> bool {
+        let (expected, given) = (self.0.as_bytes(), candidate.as_bytes());
+        expected.len() == given.len()
+            && expected
+                .iter()
+                .zip(given)
+                .fold(0u8, |diff, (a, b)| diff | (a ^ b))
+                == 0
+    }
+}
+
+impl std::fmt::Debug for SetupToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SetupToken(..)")
+    }
+}
+
+/// Which captured messages to list, newest first.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MailQuery {
+    /// Only messages matching this search (sender, recipient, subject or body).
+    pub search: Option<String>,
+    /// How many newer messages to skip.
+    pub start: u32,
+    /// Page size; the service clamps it.
+    pub limit: Option<u32>,
+}
+
+/// A message the server sent, as held by the mail capture.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CapturedMail {
+    /// The capture's message id.
+    pub id: String,
+    /// Sender address.
+    pub from: String,
+    /// Recipient addresses.
+    pub to: Vec<String>,
+    /// Subject line.
+    pub subject: String,
+    /// When the message was captured.
+    pub created_at: DateTime<Utc>,
+    /// The start of the plain-text body.
+    pub snippet: String,
+}
+
+/// One page of captured messages.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MailPage {
+    /// The messages, newest first.
+    pub messages: Vec<CapturedMail>,
+    /// How many messages match in total.
+    pub total: u32,
+}
+
+/// A captured message with its bodies.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CapturedMessage {
+    /// The message's summary.
+    pub mail: CapturedMail,
+    /// Plain-text body, if any.
+    pub text: Option<String>,
+    /// HTML body, if any. Untrusted: render it sandboxed.
+    pub html: Option<String>,
+}
+
 /// An administrative action recorded in the audit log.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuditAction {
@@ -184,11 +279,15 @@ pub enum AuditAction {
     TeamInviteRevoked,
     /// A pending workspace email invite was emailed again.
     TeamInviteResent,
+    /// A captured outgoing message was deleted.
+    CapturedMailDeleted,
+    /// Every captured outgoing message was deleted.
+    CapturedMailCleared,
 }
 
 impl AuditAction {
     /// Every action, in the order the admin panel lists them.
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 14] = [
         Self::RootClaimed,
         Self::AdminGranted,
         Self::AdminRevoked,
@@ -201,6 +300,8 @@ impl AuditAction {
         Self::InviteLinkRevoked,
         Self::TeamInviteRevoked,
         Self::TeamInviteResent,
+        Self::CapturedMailDeleted,
+        Self::CapturedMailCleared,
     ];
 
     /// The stored and API string form.
@@ -218,6 +319,8 @@ impl AuditAction {
             Self::InviteLinkRevoked => "invite_link_revoked",
             Self::TeamInviteRevoked => "team_invite_revoked",
             Self::TeamInviteResent => "team_invite_resent",
+            Self::CapturedMailDeleted => "captured_mail_deleted",
+            Self::CapturedMailCleared => "captured_mail_cleared",
         }
     }
 
@@ -294,6 +397,9 @@ pub enum SelfHostError {
     /// The request breaks a self-host rule (409).
     #[error("{0}")]
     Conflict(String),
+    /// A service this needs is not set up or not reachable (503).
+    #[error("{0}")]
+    Unavailable(String),
     /// An infrastructure failure (500).
     #[error(transparent)]
     Internal(#[from] anyhow::Error),

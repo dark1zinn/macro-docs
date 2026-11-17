@@ -22,6 +22,7 @@ import {
 } from '../settings/primitives';
 import { AuditLogSection } from './AuditLogSection';
 import { InvitesSection, time, useNow } from './InvitesSection';
+import { MailSection } from './MailSection';
 
 const joined = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' });
@@ -254,16 +255,17 @@ function SignupsSection() {
   );
 }
 
-/** Root administration of a self-hosted install: accounts, sign-up, invites, and the audit log. */
+/** Root administration of a self-hosted install: accounts, sign-up, invites, server mail, and the audit log. */
 export function SelfHostAdmin() {
   return (
     <SettingsPage
       title="Self-host"
-      description="Manage the accounts on this server, who may sign up and how they are invited, and review admin actions."
+      description="Manage the accounts on this server, who may sign up and how they are invited, read the mail it sends, and review admin actions."
     >
       <UsersSection />
       <SignupsSection />
       <InvitesSection />
+      <MailSection />
       <AuditLogSection />
     </SettingsPage>
   );
