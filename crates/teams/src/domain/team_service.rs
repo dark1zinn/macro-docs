@@ -3,6 +3,8 @@
 mod invite_link;
 #[cfg(feature = "ports")]
 pub mod invite_reminders;
+#[cfg(feature = "ports")]
+pub mod invite_resend;
 mod subscription_items;
 #[cfg(test)]
 mod test;
