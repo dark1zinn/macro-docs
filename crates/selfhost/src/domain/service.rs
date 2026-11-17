@@ -282,14 +282,27 @@ where
         let Err(error) = self.send_server_invite(caller, &email).await else {
             return Ok(());
         };
+        // Taken off only while no invitation went out to it, so a concurrent
+        // admin's successful invitation keeps the address allowed.
         if added {
             let mut entry = email_entry(caller, AuditAction::AllowedEmailRemoved, &email);
             entry.details = json!({ "reason": "the invitation could not be sent" });
-            self.run_audited(entry, async {
-                self.repo.remove_allowed_email(&email).await?;
-                Ok(())
-            })
-            .await?;
+            let undone = self
+                .run_audited(entry, async {
+                    if self.repo.remove_uninvited_allowed_email(&email).await? {
+                        Ok(())
+                    } else {
+                        Err(SelfHostError::Conflict(
+                            "another invitation went out to this address; it stays allowed".into(),
+                        ))
+                    }
+                })
+                .await;
+            // The caller learns why the invitation failed; the audit log shows
+            // whether the address was taken off again.
+            if let Err(undo) = undone {
+                tracing::warn!(error = ?undo, "allowed email kept after its invitation failed");
+            }
         }
         Err(error)
     }
@@ -451,8 +464,8 @@ where
                     ));
                 }
                 let interval = self.inviter.resend_interval();
-                let previous = match self.repo.claim_invite(email, interval).await? {
-                    InviteClaim::Claimed(previous) => previous,
+                let claim = match self.repo.claim_invite(email, interval).await? {
+                    InviteClaim::Claimed(claim) => claim,
                     InviteClaim::TooSoon(at) => {
                         return Err(SelfHostError::Conflict(format!(
                             "this address was invited recently; it can be invited again after {}",
@@ -464,8 +477,8 @@ where
                     }
                 };
                 if let Err(error) = self.inviter.invite(caller, email).await {
-                    if let Err(undo) = self.repo.restore_last_invited(email, previous).await {
-                        tracing::error!(error = ?undo, "failed to restore invitation time");
+                    if let Err(undo) = self.repo.undo_invite_claim(email, claim).await {
+                        tracing::error!(error = ?undo, "failed to undo the invitation claim");
                     }
                     return Err(error.into());
                 }

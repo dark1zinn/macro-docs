@@ -10,8 +10,8 @@ use uuid::Uuid;
 
 use super::model::{
     AllowedEmail, AuditAction, AuditEntry, AuditQuery, AuditStatus, BulkFailure, BulkOutcome,
-    InviteClaim, InviteLinkRecord, NewAuditEntry, PendingInvite, SelfHostError, SignupPolicy,
-    UserRecord,
+    ClaimedInvite, InviteClaim, InviteLinkRecord, NewAuditEntry, PendingInvite, SelfHostError,
+    SignupPolicy, UserRecord,
 };
 use super::ports::{
     AccountPort, AuditLog, RolesPort, SelfHostRepo, ServerInviter, WorkspaceInvites,
@@ -59,6 +59,8 @@ struct State {
     last_invited: HashMap<String, DateTime<Utc>>,
     /// When set, sending a server invitation fails.
     fail_server_invite: bool,
+    /// When set, another admin invites the address while this send fails.
+    invited_elsewhere_during_send: bool,
 }
 
 #[derive(Clone, Default)]
@@ -323,16 +325,15 @@ impl SelfHostRepo for Fake {
             return Ok(InviteClaim::TooSoon(last + Duration::from_std(interval)?));
         }
         state.last_invited.insert(email.into(), now);
-        Ok(InviteClaim::Claimed(previous))
+        Ok(InviteClaim::Claimed(ClaimedInvite { previous, at: now }))
     }
 
-    async fn restore_last_invited(
-        &self,
-        email: &str,
-        previous: Option<DateTime<Utc>>,
-    ) -> anyhow::Result<()> {
+    async fn undo_invite_claim(&self, email: &str, claim: ClaimedInvite) -> anyhow::Result<()> {
         let mut state = self.0.lock().unwrap();
-        match previous {
+        if state.last_invited.get(email) != Some(&claim.at) {
+            return Ok(());
+        }
+        match claim.previous {
             Some(at) => state.last_invited.insert(email.into(), at),
             None => state.last_invited.remove(email),
         };
@@ -340,8 +341,19 @@ impl SelfHostRepo for Fake {
     }
 
     async fn remove_allowed_email(&self, email: &str) -> anyhow::Result<()> {
-        self.0.lock().unwrap().allowed.retain(|e| e != email);
+        let mut state = self.0.lock().unwrap();
+        state.allowed.retain(|e| e != email);
+        state.last_invited.remove(email);
         Ok(())
+    }
+
+    async fn remove_uninvited_allowed_email(&self, email: &str) -> anyhow::Result<bool> {
+        let mut state = self.0.lock().unwrap();
+        if state.last_invited.contains_key(email) {
+            return Ok(false);
+        }
+        state.allowed.retain(|e| e != email);
+        Ok(true)
     }
 
     async fn has_signup_grant(&self, email: &str) -> anyhow::Result<bool> {
@@ -492,6 +504,11 @@ impl ServerInviter for Fake {
     async fn invite(&self, _admin: &str, email: &str) -> anyhow::Result<()> {
         let mut state = self.0.lock().unwrap();
         if state.fail_server_invite {
+            if state.invited_elsewhere_during_send {
+                // Another admin's claim lands after this one, and its email goes out.
+                let later = Utc::now() + Duration::seconds(1);
+                state.last_invited.insert(email.into(), later);
+            }
             anyhow::bail!("notification service unavailable");
         }
         state.server_invites.push(email.into());
@@ -1335,4 +1352,37 @@ async fn a_failed_invitation_leaves_no_trace_of_itself() {
     svc.invite_allowed_email(ROOT, "earlier@example.com")
         .await
         .unwrap();
+}
+
+/// A failed invitation's undo never erases another admin's invitation that
+/// went out meanwhile: its time stays, and the address stays allowed, with
+/// the refused removal audited.
+#[tokio::test]
+async fn a_failed_invitation_keeps_a_concurrent_successful_one() {
+    let f = two_users_with_root();
+    {
+        let mut state = f.0.lock().unwrap();
+        state.fail_server_invite = true;
+        state.invited_elsewhere_during_send = true;
+    }
+    let svc = service(&f);
+
+    svc.add_allowed_email(ROOT, "fresh@example.com", true)
+        .await
+        .unwrap_err();
+
+    {
+        let state = f.0.lock().unwrap();
+        assert_eq!(state.allowed, ["fresh@example.com"]);
+        assert!(state.last_invited.contains_key("fresh@example.com"));
+    }
+    assert!(matches!(
+        f.audit().last(),
+        Some((
+            _,
+            AuditAction::AllowedEmailRemoved,
+            _,
+            AuditStatus::Failed(_)
+        ))
+    ));
 }

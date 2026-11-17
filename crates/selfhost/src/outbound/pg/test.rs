@@ -109,7 +109,7 @@ async fn concurrent_invitations_to_one_address_claim_once(pool: PgPool) {
     assert_eq!(
         claims
             .iter()
-            .filter(|c| **c == InviteClaim::Claimed(None))
+            .filter(|c| matches!(c, InviteClaim::Claimed(claim) if claim.previous.is_none()))
             .count(),
         1,
         "exactly one invitation must win the race: {claims:?}"
@@ -128,25 +128,62 @@ async fn concurrent_invitations_to_one_address_claim_once(pool: PgPool) {
     );
 }
 
-/// Putting back the previous time after a failed send lets the next
-/// invitation go out right away.
+/// Undoing a claim after a failed send lets the next invitation go out right
+/// away, and taking an uninvited address off the list works.
 #[sqlx::test(migrator = "macro_db_migrator::MACRO_DB_MIGRATIONS")]
-async fn a_restored_invitation_time_frees_the_address(pool: PgPool) {
+async fn an_undone_claim_frees_the_address(pool: PgPool) {
     let repo = PgSelfHostRepo::new(pool.clone());
     repo.add_allowed_email("new@example.com", "macro|a@example.com")
         .await
         .unwrap();
-    let InviteClaim::Claimed(previous) = repo.claim_invite("new@example.com", WEEK).await.unwrap()
+    let InviteClaim::Claimed(claim) = repo.claim_invite("new@example.com", WEEK).await.unwrap()
     else {
         panic!("the first invitation must be claimed");
     };
+    assert!(
+        !repo
+            .remove_uninvited_allowed_email("new@example.com")
+            .await
+            .unwrap(),
+        "an invited address stays"
+    );
 
-    repo.restore_last_invited("new@example.com", previous)
+    repo.undo_invite_claim("new@example.com", claim)
         .await
         .unwrap();
 
-    assert_eq!(
-        repo.claim_invite("new@example.com", WEEK).await.unwrap(),
-        InviteClaim::Claimed(None)
+    assert!(
+        repo.remove_uninvited_allowed_email("new@example.com")
+            .await
+            .unwrap()
     );
+}
+
+/// Undoing a stale claim leaves a newer one alone: the address was removed,
+/// added back and invited again while the first send was failing.
+#[sqlx::test(migrator = "macro_db_migrator::MACRO_DB_MIGRATIONS")]
+async fn undoing_a_stale_claim_keeps_the_newer_one(pool: PgPool) {
+    let repo = PgSelfHostRepo::new(pool.clone());
+    repo.add_allowed_email("new@example.com", "macro|a@example.com")
+        .await
+        .unwrap();
+    let InviteClaim::Claimed(stale) = repo.claim_invite("new@example.com", WEEK).await.unwrap()
+    else {
+        panic!("the first invitation must be claimed");
+    };
+    repo.remove_allowed_email("new@example.com").await.unwrap();
+    repo.add_allowed_email("new@example.com", "macro|b@example.com")
+        .await
+        .unwrap();
+    let InviteClaim::Claimed(newer) = repo.claim_invite("new@example.com", WEEK).await.unwrap()
+    else {
+        panic!("the re-added address must be claimable");
+    };
+
+    repo.undo_invite_claim("new@example.com", stale)
+        .await
+        .unwrap();
+
+    let last = repo.list_allowed_emails().await.unwrap()[0].last_invited_at;
+    assert_eq!(last, Some(newer.at));
 }

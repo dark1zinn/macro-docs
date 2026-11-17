@@ -80,7 +80,10 @@ impl<N: NotificationIngress> ServerInviter for NotificationInviter<N> {
             recipient_ids: HashSet::from([recipient]),
         }
         .into_request()
-        .with_email();
+        // The domain's claim already limits each address to one invitation per
+        // interval; a second limiter timed from delivery would drop sends the
+        // claim allowed.
+        .with_email_outside_rate_limit();
         self.notifications
             .send_notification(request)
             .await

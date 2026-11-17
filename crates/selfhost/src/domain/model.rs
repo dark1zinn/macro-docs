@@ -73,13 +73,22 @@ pub struct AllowedEmail {
 /// The outcome of claiming the right to send an allowed email a server invitation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InviteClaim {
-    /// The address may be invited now, and is recorded as invited. Holds the
-    /// previous invitation time, to put back if the send fails.
-    Claimed(Option<DateTime<Utc>>),
+    /// The address may be invited now, and is recorded as invited at `at`.
+    Claimed(ClaimedInvite),
     /// The address was invited too recently; it can be invited again at this time.
     TooSoon(DateTime<Utc>),
     /// The address is not on the allowlist.
     NotAllowed,
+}
+
+/// A claimed invitation, with what to put back if its send fails.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClaimedInvite {
+    /// The previous invitation time.
+    pub previous: Option<DateTime<Utc>>,
+    /// The invitation time this claim recorded. Undoing the claim only
+    /// applies while the address still holds it, so a later claim survives.
+    pub at: DateTime<Utc>,
 }
 
 /// What a bulk admin action did: how many items succeeded, and why the rest failed.

@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use macro_user_id::user_id::MacroUserIdStr;
 use sqlx::{PgPool, Postgres, Transaction};
 
-use crate::domain::model::{AllowedEmail, InviteClaim, SignupPolicy, UserRecord};
+use crate::domain::model::{AllowedEmail, ClaimedInvite, InviteClaim, SignupPolicy, UserRecord};
 use crate::domain::ports::SelfHostRepo;
 
 /// Postgres-backed self-host repository over the MacroDB pool.
@@ -301,6 +301,7 @@ impl SelfHostRepo for PgSelfHostRepo {
         {
             return Ok(InviteClaim::TooSoon(last + interval));
         }
+        // `now()` is fixed for the transaction, so it equals `row.now`.
         sqlx::query!(
             "UPDATE selfhost_signup_allowlist SET last_invited_at = now() WHERE email = $1",
             email
@@ -308,22 +309,33 @@ impl SelfHostRepo for PgSelfHostRepo {
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;
-        Ok(InviteClaim::Claimed(row.last_invited_at))
+        Ok(InviteClaim::Claimed(ClaimedInvite {
+            previous: row.last_invited_at,
+            at: row.now,
+        }))
     }
 
-    async fn restore_last_invited(
-        &self,
-        email: &str,
-        previous: Option<DateTime<Utc>>,
-    ) -> anyhow::Result<()> {
+    async fn undo_invite_claim(&self, email: &str, claim: ClaimedInvite) -> anyhow::Result<()> {
         sqlx::query!(
-            "UPDATE selfhost_signup_allowlist SET last_invited_at = $2 WHERE email = $1",
+            "UPDATE selfhost_signup_allowlist SET last_invited_at = $2 WHERE email = $1 AND last_invited_at = $3",
             email,
-            previous
+            claim.previous,
+            claim.at
         )
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    async fn remove_uninvited_allowed_email(&self, email: &str) -> anyhow::Result<bool> {
+        let removed = sqlx::query!(
+            "DELETE FROM selfhost_signup_allowlist WHERE email = $1 AND last_invited_at IS NULL",
+            email
+        )
+        .execute(&self.pool)
+        .await?
+        .rows_affected();
+        Ok(removed > 0)
     }
 
     async fn remove_allowed_email(&self, email: &str) -> anyhow::Result<()> {

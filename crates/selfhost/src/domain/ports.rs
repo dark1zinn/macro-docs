@@ -4,13 +4,12 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use roles_and_permissions::domain::model::RoleId;
 use uuid::Uuid;
 
 use super::model::{
-    AllowedEmail, AuditEntry, AuditQuery, AuditStatus, InviteClaim, InviteLinkRecord,
-    NewAuditEntry, PendingInvite, SelfHostError, SignupPolicy, UserRecord,
+    AllowedEmail, AuditEntry, AuditQuery, AuditStatus, ClaimedInvite, InviteClaim,
+    InviteLinkRecord, NewAuditEntry, PendingInvite, SelfHostError, SignupPolicy, UserRecord,
 };
 
 /// Persistence for self-host state.
@@ -62,16 +61,17 @@ pub trait SelfHostRepo: Send + Sync + 'static {
     /// so one invitation goes out.
     async fn claim_invite(&self, email: &str, interval: Duration) -> anyhow::Result<InviteClaim>;
 
-    /// Puts back an allowed email's previous invitation time after its
-    /// invitation could not be sent.
-    async fn restore_last_invited(
-        &self,
-        email: &str,
-        previous: Option<DateTime<Utc>>,
-    ) -> anyhow::Result<()>;
+    /// Undoes `claim` after its invitation could not be sent, putting back the
+    /// previous invitation time. Does nothing once the address no longer holds
+    /// that claim (it was invited again, or removed and added back).
+    async fn undo_invite_claim(&self, email: &str, claim: ClaimedInvite) -> anyhow::Result<()>;
 
     /// Removes an allowed signup email. Idempotent.
     async fn remove_allowed_email(&self, email: &str) -> anyhow::Result<()>;
+
+    /// Removes an allowed signup email that has no recorded invitation.
+    /// Returns `false` and keeps it when an invitation went out to it.
+    async fn remove_uninvited_allowed_email(&self, email: &str) -> anyhow::Result<bool>;
 
     /// Whether `email` may sign up under `InviteOnly`: it is allowlisted or has a team invite.
     async fn has_signup_grant(&self, email: &str) -> anyhow::Result<bool>;
