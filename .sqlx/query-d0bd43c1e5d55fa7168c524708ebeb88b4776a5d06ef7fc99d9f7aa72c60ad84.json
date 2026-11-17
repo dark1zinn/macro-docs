@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE selfhost_signup_allowlist SET last_invited_at = $2 WHERE email = $1 AND last_invited_at = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d0bd43c1e5d55fa7168c524708ebeb88b4776a5d06ef7fc99d9f7aa72c60ad84"
+}

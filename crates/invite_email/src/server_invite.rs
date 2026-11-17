@@ -17,7 +17,8 @@ pub struct ServerInvite {
 
 impl ServerInvite {
     /// How long one address waits between invitations. The self-host admin
-    /// refuses an earlier one instead of letting the rate limit drop it.
+    /// enforces it per address and sends each invitation outside the email's
+    /// own rate limit, which only guards other senders.
     pub const RESEND_INTERVAL: Duration = Duration::from_hours(24 * 7);
 
     fn display_name(&self) -> Option<String> {
