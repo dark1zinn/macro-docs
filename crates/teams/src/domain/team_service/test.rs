@@ -33,6 +33,7 @@ use roles_and_permissions::domain::{
 };
 
 use super::invite_reminders::{InviteReminderReport, InviteReminderSender};
+use super::invite_resend::ImmediateInviteResender;
 use crate::domain::{
     contacts_enqueuer::ContactsEnqueuer,
     crm_enqueuer::{CrmEnqueuer, NoOpCrmEnqueuer},
@@ -9295,6 +9296,141 @@ async fn invite_reminders_promise_what_joining_grants() {
 
     let expected: Vec<_> = cases.iter().map(|case| serde_json::json!(case.3)).collect();
     assert_eq!(invitee_plans_sent(&notification_ingress), expected);
+}
+
+// -- Immediate invite resends --
+
+fn build_resend_service(
+    team_repo: MockTeamRepository,
+) -> (impl ImmediateInviteResender, Arc<MockNotificationIngress>) {
+    let notification_ingress = Arc::new(MockNotificationIngress::new(HashSet::new()));
+    let service = TeamServiceImpl::new(
+        team_repo,
+        MockCustomerRepository::default(),
+        RecordingChannelService::default(),
+        MockUserRolesAndPermissionsService::default(),
+        notification_ingress.clone(),
+        NoOpCrmEnqueuer,
+        NoOpTeamCrmSettingsRepository,
+    );
+    (service, notification_ingress)
+}
+
+fn resend_repo(team_id: uuid::Uuid, invite_id: uuid::Uuid) -> MockTeamRepository {
+    let mut team_repo =
+        MockTeamRepository::new(Vec::new(), "Acme", Arc::new(Mutex::new(Vec::new())));
+    team_repo.invite_by_id = Some(make_invite("invitee@example.com", invite_id, team_id));
+    team_repo
+}
+
+/// Each immediate resend emails the invitee in a rate-limit bucket of its own,
+/// so neither an earlier email nor another immediate resend holds it back, and
+/// the invite counts as just sent.
+#[tokio::test]
+async fn immediate_resends_each_get_their_own_rate_limit_bucket() {
+    let team_id = uuid::Uuid::from_u128(9400);
+    let invite_id = uuid::Uuid::from_u128(9401);
+    let team_repo = resend_repo(team_id, invite_id);
+    let mark_sent_calls = team_repo.mark_sent_calls.clone();
+    let (service, notification_ingress) = build_resend_service(team_repo);
+    let admin = MacroUserIdStr::parse_from_str("macro|admin@example.com").unwrap();
+
+    for _ in 0..2 {
+        service
+            .resend_invite_now(
+                test_team_receipt::<AdminTeamRole>(team_id, &admin),
+                invite_id,
+            )
+            .await
+            .unwrap();
+    }
+
+    let requests = notification_ingress.recorded_requests.lock().unwrap();
+    let content: InviteToTeamMetadata =
+        serde_json::from_value(requests[0]["req"]["notification"]["content"].clone()).unwrap();
+    let shared = notification::domain::models::NotificationExtEmail::rate_limit_key(&content);
+    let shared = serde_json::to_value(shared).unwrap();
+    let keys: Vec<_> = requests
+        .iter()
+        .map(|request| request["build_email"]["rate_limit_key"].clone())
+        .collect();
+    assert_ne!(keys[0], shared);
+    assert_ne!(keys[1], shared);
+    assert_ne!(keys[0], keys[1]);
+    for request in requests.iter() {
+        assert_eq!(
+            request["req"]["recipient_ids"],
+            serde_json::json!(["macro|invitee@example.com"])
+        );
+        assert_eq!(request["req"]["sender_id"], "macro|admin@example.com");
+        assert_eq!(request["req"]["notification"]["content"]["reminder"], false);
+    }
+    assert_eq!(
+        *mark_sent_calls.lock().unwrap(),
+        vec![vec![invite_id], vec![invite_id]]
+    );
+}
+
+/// A team that only lets its admins invite refuses an immediate resend from
+/// someone who is not one of its admins, and nothing is emailed.
+#[tokio::test]
+async fn immediate_resend_respects_admin_only_invites() {
+    let team_id = uuid::Uuid::from_u128(9410);
+    let invite_id = uuid::Uuid::from_u128(9411);
+    let mut team_repo = resend_repo(team_id, invite_id);
+    team_repo.allow_non_admin_invites = false;
+    team_repo.caller_team_role = None;
+    let (service, notification_ingress) = build_resend_service(team_repo);
+    let admin = MacroUserIdStr::parse_from_str("macro|admin@example.com").unwrap();
+
+    let result = service
+        .resend_invite_now(
+            test_team_receipt::<AdminTeamRole>(team_id, &admin),
+            invite_id,
+        )
+        .await;
+
+    assert!(matches!(
+        result,
+        Err(InviteUsersToTeamError::NonAdminInvitesDisabled)
+    ));
+    assert!(
+        notification_ingress
+            .recorded_requests
+            .lock()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+/// An invite that belongs to another team is not found through this team's receipt.
+#[tokio::test]
+async fn immediate_resend_refuses_another_teams_invite() {
+    let invite_id = uuid::Uuid::from_u128(9421);
+    let team_repo = resend_repo(uuid::Uuid::from_u128(9420), invite_id);
+    let (service, notification_ingress) = build_resend_service(team_repo);
+    let admin = MacroUserIdStr::parse_from_str("macro|admin@example.com").unwrap();
+
+    let result = service
+        .resend_invite_now(
+            test_team_receipt::<AdminTeamRole>(uuid::Uuid::from_u128(9429), &admin),
+            invite_id,
+        )
+        .await;
+
+    assert!(matches!(
+        result,
+        Err(InviteUsersToTeamError::TeamError(
+            TeamError::TeamInviteDoesNotExist
+        ))
+    ));
+    assert!(
+        notification_ingress
+            .recorded_requests
+            .lock()
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[tokio::test]

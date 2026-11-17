@@ -187,6 +187,18 @@ impl<'a, T: NotificationExtEmail, U> SendNotificationRequest<'a, T, U> {
         self.build_email = Some(EmailCreateBundle::new(&self.req.notification.content));
         self
     }
+
+    /// Add the email in a rate-limit bucket of its own, keyed by this
+    /// notification's id, so the type's window does not hold it back. Only for
+    /// a send an operator explicitly forces; every other send shares the type's
+    /// bucket.
+    pub fn with_email_outside_rate_limit(mut self) -> Self {
+        self.build_email = Some(
+            EmailCreateBundle::new(&self.req.notification.content)
+                .in_own_bucket(self.uuid_to_write),
+        );
+        self
+    }
 }
 
 impl<'a, T: Notification, U> SendNotificationRequest<'a, T, U> {
