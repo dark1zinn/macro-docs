@@ -114,8 +114,13 @@ pub async fn handler(
         }
     }
 
+    // Root goes to the account that received this session.
     if setup_token {
-        crate::api::selfhost_admin::claim_root_with_setup_token(&ctx, &email).await;
+        crate::api::selfhost_admin::claim_root_with_setup_token(
+            &ctx,
+            &passwordless_response.user.email,
+        )
+        .await;
     }
 
     cookies.add(create_access_token_cookie(&passwordless_response.token));
