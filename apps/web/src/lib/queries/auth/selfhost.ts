@@ -44,7 +44,7 @@ export type SelfHostInviteAction =
   | { kind: 'revoke_all_links' }
   | { kind: 'revoke_invite'; inviteId: string }
   | { kind: 'revoke_all_invites' }
-  | { kind: 'resend_invite'; inviteId: string }
+  | { kind: 'resend_invite'; inviteId: string; now: boolean }
   | { kind: 'invite_allowed_email'; email: string };
 
 const runInviteAction = (action: SelfHostInviteAction) => {
@@ -58,7 +58,7 @@ const runInviteAction = (action: SelfHostInviteAction) => {
     case 'revoke_all_invites':
       return selfHostClient.revokeAllInvites();
     case 'resend_invite':
-      return selfHostClient.resendInvite(action.inviteId);
+      return selfHostClient.resendInvite(action.inviteId, action.now);
     case 'invite_allowed_email':
       return selfHostClient.inviteAllowedEmail(action.email);
   }

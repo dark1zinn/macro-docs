@@ -15,9 +15,18 @@ export type SelfHostUser = {
 
 export type SelfHostSignupPolicy = 'open' | 'invite_only';
 
+/** An address allowed to sign up. */
+export type SelfHostAllowedEmail = {
+  email: string;
+  created_at: string;
+  last_invited_at: string | null;
+  /** Sending it a server invitation before this time is refused; absent when it can be sent now. */
+  invitable_at: string | null;
+};
+
 export type SelfHostSignups = {
   policy: SelfHostSignupPolicy;
-  allowed_emails: { email: string; created_at: string }[];
+  allowed_emails: SelfHostAllowedEmail[];
 };
 
 export type SelfHostAuditAction =
@@ -53,13 +62,19 @@ export type SelfHostPendingInvite = {
   invited_by: string;
   created_at: string;
   last_sent_at: string;
-  /** Emailing it again before this time is refused. */
+  /** Emailing it again before this time is refused unless sent now on purpose. */
   resendable_at: string;
 };
 
 export type SelfHostInvites = {
   links: SelfHostInviteLink[];
   invites: SelfHostPendingInvite[];
+};
+
+/** What a revoke-all did: how many succeeded, and which failed and why. */
+export type SelfHostRevokedAll = {
+  revoked: number;
+  failed: { target: string; error: string }[];
 };
 
 /** One recorded admin action. `actor` is absent for system actions. */
@@ -167,7 +182,7 @@ export const selfHostClient = {
       send('POST', { team_id: teamId })
     ),
   revokeAllInviteLinks: () =>
-    fetchWithToken<{ revoked: number }, SelfHostErrorCode>(
+    fetchWithToken<SelfHostRevokedAll, SelfHostErrorCode>(
       `${base}/invites/links/revoke_all`,
       send('POST', {})
     ),
@@ -177,14 +192,15 @@ export const selfHostClient = {
       send('POST', { invite_id: inviteId })
     ),
   revokeAllInvites: () =>
-    fetchWithToken<{ revoked: number }, SelfHostErrorCode>(
+    fetchWithToken<SelfHostRevokedAll, SelfHostErrorCode>(
       `${base}/invites/revoke_all`,
       send('POST', {})
     ),
-  resendInvite: (inviteId: string) =>
+  /** `now` sends it even inside its resend window. */
+  resendInvite: (inviteId: string, now: boolean) =>
     fetchWithToken<object, SelfHostErrorCode>(
       `${base}/invites/resend`,
-      send('POST', { invite_id: inviteId })
+      send('POST', { invite_id: inviteId, now })
     ),
   removeAllowedEmail: (email: string) =>
     fetchWithToken<object, SelfHostErrorCode>(

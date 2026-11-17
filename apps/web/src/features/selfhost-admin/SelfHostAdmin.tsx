@@ -7,7 +7,10 @@ import {
   useSetSelfHostDisabledMutation,
   useSetSelfHostPolicyMutation,
 } from '@queries/auth/selfhost';
-import type { SelfHostUser } from '@service-auth/selfhost';
+import type {
+  SelfHostAllowedEmail,
+  SelfHostUser,
+} from '@service-auth/selfhost';
 import { Button, Checkbox, Input, ToggleSwitch } from '@ui';
 import { createSignal, For, Show } from 'solid-js';
 import {
@@ -18,7 +21,7 @@ import {
   SettingsSection,
 } from '../settings/primitives';
 import { AuditLogSection } from './AuditLogSection';
-import { InvitesSection } from './InvitesSection';
+import { InvitesSection, time, useNow } from './InvitesSection';
 
 const joined = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' });
@@ -105,11 +108,60 @@ function UsersSection() {
   );
 }
 
+function AllowedEmailRow(props: {
+  entry: SelfHostAllowedEmail;
+  now: number;
+  pending: boolean;
+  onInvite: () => void;
+  onRemove: () => void;
+}) {
+  // Invitations go out at most once a week per address; the server refuses sooner ones.
+  const waitUntil = () => {
+    const at = props.entry.invitable_at;
+    return at && new Date(at).getTime() > props.now ? at : undefined;
+  };
+  const description = () =>
+    [
+      `Added ${joined(props.entry.created_at)}`,
+      props.entry.last_invited_at
+        ? `invited ${time(props.entry.last_invited_at)}`
+        : undefined,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+
+  return (
+    <SettingsRow label={props.entry.email} description={description()}>
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled={props.pending || Boolean(waitUntil())}
+        title={(() => {
+          const at = waitUntil();
+          return at ? `Can be invited again after ${time(at)}` : undefined;
+        })()}
+        onClick={() => props.onInvite()}
+      >
+        Send invite
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled={props.pending}
+        onClick={() => props.onRemove()}
+      >
+        Remove
+      </Button>
+    </SettingsRow>
+  );
+}
+
 function SignupsSection() {
   const signups = useSelfHostSignupsQuery();
   const setPolicy = useSetSelfHostPolicyMutation();
   const allowedEmail = useAllowedEmailMutation();
   const invite = useSelfHostInviteActionMutation();
+  const now = useNow();
   const [email, setEmail] = createSignal('');
   const [notify, setNotify] = createSignal(true);
 
@@ -180,34 +232,20 @@ function SignupsSection() {
         </SettingsRow>
         <For each={signups.data?.allowed_emails ?? []}>
           {(entry) => (
-            <SettingsRow
-              label={entry.email}
-              description={`Added ${joined(entry.created_at)}`}
-            >
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={invite.isPending}
-                onClick={() =>
-                  invite.mutate({
-                    kind: 'invite_allowed_email',
-                    email: entry.email,
-                  })
-                }
-              >
-                Send invite
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={allowedEmail.isPending}
-                onClick={() =>
-                  allowedEmail.mutate({ email: entry.email, remove: true })
-                }
-              >
-                Remove
-              </Button>
-            </SettingsRow>
+            <AllowedEmailRow
+              entry={entry}
+              now={now()}
+              pending={invite.isPending || allowedEmail.isPending}
+              onInvite={() =>
+                invite.mutate({
+                  kind: 'invite_allowed_email',
+                  email: entry.email,
+                })
+              }
+              onRemove={() =>
+                allowedEmail.mutate({ email: entry.email, remove: true })
+              }
+            />
           )}
         </For>
         <ErrorLine error={allowedEmail.error ?? invite.error} />
