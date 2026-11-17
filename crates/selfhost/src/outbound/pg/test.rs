@@ -152,10 +152,19 @@ async fn an_undone_claim_frees_the_address(pool: PgPool) {
         .await
         .unwrap();
 
+    assert!(matches!(
+        repo.claim_invite("new@example.com", WEEK).await.unwrap(),
+        InviteClaim::Claimed(next) if next.previous.is_none()
+    ));
+    repo.undo_invite_claim("new@example.com", claim)
+        .await
+        .unwrap();
     assert!(
-        repo.remove_uninvited_allowed_email("new@example.com")
+        !repo
+            .remove_uninvited_allowed_email("new@example.com")
             .await
-            .unwrap()
+            .unwrap(),
+        "undoing the stale first claim must not clear the second"
     );
 }
 
