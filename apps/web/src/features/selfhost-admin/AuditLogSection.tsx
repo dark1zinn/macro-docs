@@ -72,7 +72,9 @@ export function describeAuditEntry(entry: SelfHostAuditEntry): string {
     case 'allowed_email_added':
       return `${who} allowed ${target} to sign up`;
     case 'allowed_email_removed':
-      return `${who} removed ${target} from allowed emails`;
+      return entry.details.reason === 'the invitation could not be sent'
+        ? `${target} was removed from allowed emails because the invitation could not be sent`
+        : `${who} removed ${target} from allowed emails`;
     case 'allowed_email_invited':
       return `${who} invited ${target} to sign up`;
     case 'invite_link_revoked':
@@ -80,7 +82,9 @@ export function describeAuditEntry(entry: SelfHostAuditEntry): string {
     case 'team_invite_revoked':
       return `${who} cancelled ${target}'s invite to ${detail(entry, 'team_name')}`;
     case 'team_invite_resent':
-      return `${who} resent ${target}'s invite to ${detail(entry, 'team_name')}`;
+      return `${who} resent ${target}'s invite to ${detail(entry, 'team_name')}${
+        entry.details.immediate === true ? ' before its resend window' : ''
+      }`;
   }
 }
 

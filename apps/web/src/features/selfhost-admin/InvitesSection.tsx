@@ -8,6 +8,7 @@ import {
 import type {
   SelfHostInviteLink,
   SelfHostPendingInvite,
+  SelfHostRevokedAll,
 } from '@service-auth/selfhost';
 import { Button, confirmDialog } from '@ui';
 import { createSignal, For, onCleanup, Show } from 'solid-js';
@@ -24,14 +25,21 @@ const email = (id: string | null) => id?.replace(/^macro\|/, '') ?? '';
 const date = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' });
 
-const time = (iso: string) =>
+/** Single invite actions return nothing; the revoke-all ones report what they did. */
+const isRevokedAll = (result: unknown): result is SelfHostRevokedAll =>
+  typeof result === 'object' &&
+  result !== null &&
+  'revoked' in result &&
+  'failed' in result;
+
+export const time = (iso: string) =>
   new Date(iso).toLocaleString(undefined, {
     dateStyle: 'medium',
     timeStyle: 'short',
   });
 
-/** The current time, ticking each minute so resend buttons unlock on their own. */
-function useNow() {
+/** The current time, ticking each minute so time-gated buttons update on their own. */
+export function useNow() {
   const [now, setNow] = createSignal(Date.now());
   const timer = setInterval(() => setNow(Date.now()), 60_000);
   onCleanup(() => clearInterval(timer));
@@ -96,8 +104,25 @@ function InviteRow(props: {
   pending: boolean;
   run: (action: SelfHostInviteAction) => void;
 }) {
-  const canResend = () =>
-    props.now >= new Date(props.invite.resendable_at).getTime();
+  const inWindow = () =>
+    props.now < new Date(props.invite.resendable_at).getTime();
+
+  // Inside the resend window the email is sent anyway, after a confirmation.
+  const resend = async () => {
+    if (inWindow()) {
+      const confirmed = await confirmDialog({
+        title: 'Resend this invite now?',
+        body: `It was emailed ${time(props.invite.last_sent_at)}; resends are normally held until ${time(props.invite.resendable_at)} so one address does not get repeated mail.`,
+        confirmLabel: 'Resend now',
+      });
+      if (!confirmed) return;
+    }
+    props.run({
+      kind: 'resend_invite',
+      inviteId: props.invite.invite_id,
+      now: inWindow(),
+    });
+  };
 
   return (
     <SettingsRow
@@ -110,17 +135,17 @@ function InviteRow(props: {
       <Button
         variant="secondary"
         size="sm"
-        disabled={props.pending || !canResend()}
+        disabled={props.pending}
         title={
-          canResend()
-            ? undefined
-            : `Can be resent after ${time(props.invite.resendable_at)}`
+          inWindow()
+            ? `Normally resendable after ${time(props.invite.resendable_at)}`
+            : undefined
         }
-        onClick={() =>
-          props.run({ kind: 'resend_invite', inviteId: props.invite.invite_id })
-        }
+        onClick={() => {
+          void resend();
+        }}
       >
-        Resend
+        {inWindow() ? 'Resend now' : 'Resend'}
       </Button>
       <Button
         variant="ghost"
@@ -155,7 +180,21 @@ export function InvitesSection() {
       confirmLabel: links ? 'Revoke all' : 'Cancel all',
       tone: 'danger',
     });
-    if (confirmed) run({ kind });
+    if (!confirmed) return;
+    // A failed request already shows its error below the list.
+    const result = await action.mutateAsync({ kind }).catch(() => undefined);
+    if (!isRevokedAll(result)) return;
+    const done = links
+      ? `Revoked ${result.revoked} invite link${result.revoked === 1 ? '' : 's'}`
+      : `Cancelled ${result.revoked} invite${result.revoked === 1 ? '' : 's'}`;
+    const [first] = result.failed;
+    if (first) {
+      toast.failure(
+        `${done}; ${result.failed.length} failed (${first.target}: ${first.error})`
+      );
+    } else {
+      toast.success(done);
+    }
   };
 
   const loading = (empty: string) =>
