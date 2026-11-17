@@ -131,8 +131,9 @@ pub async fn handler(
                         return Err(denied);
                     }
 
-                    // The user-created webhook re-checks the self-host policy;
-                    // tell it the invite link was already accepted here.
+                    // The user-created webhook re-checks the self-host policy
+                    // without the link; tell it this sign-up, which came with
+                    // one, already passed the check above.
                     let mut data = serde_json::Map::new();
                     if req.is_agent {
                         data.insert(AGENT_SIGNUP_DATA_KEY.into(), true.into());
