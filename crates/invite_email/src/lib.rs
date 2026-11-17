@@ -3,8 +3,8 @@
 //!
 //! Contains the [`InviteToMacro`] referral notification, the [`InviteToTeamMetadata`] team
 //! invitation notification and its [`InviteePlan`], the [`ChannelInviteMetadata`] channel
-//! invitation, the [`ColleagueJoinedMacro`] colleague join email, and the [`ReferralCode`]
-//! newtype.
+//! invitation, the [`ColleagueJoinedMacro`] colleague join email, the self-host
+//! [`ServerInvite`], and the [`ReferralCode`] newtype.
 
 #[cfg(test)]
 mod test;
@@ -14,6 +14,9 @@ pub use call_invite::CallInvite;
 
 mod colleague_joined;
 pub use colleague_joined::ColleagueJoinedMacro;
+
+mod server_invite;
+pub use server_invite::ServerInvite;
 
 use askama::Template;
 use macro_env::Environment;
