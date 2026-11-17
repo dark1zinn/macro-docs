@@ -1295,12 +1295,13 @@ async fn a_failed_invitation_leaves_no_trace_of_itself() {
         .unwrap();
     f.0.lock().unwrap().fail_server_invite = true;
 
-    svc.add_allowed_email(ROOT, "fresh@example.com", true)
-        .await
-        .unwrap_err();
-    svc.add_allowed_email(ROOT, "earlier@example.com", true)
-        .await
-        .unwrap_err();
+    for email in ["fresh@example.com", "earlier@example.com"] {
+        let err = svc.add_allowed_email(ROOT, email, true).await.unwrap_err();
+        assert!(
+            matches!(&err, SelfHostError::Internal(e) if e.to_string() == "notification service unavailable"),
+            "the caller gets the send failure: {err:?}"
+        );
+    }
 
     {
         let state = f.0.lock().unwrap();
@@ -1367,9 +1368,14 @@ async fn a_failed_invitation_keeps_a_concurrent_successful_one() {
     }
     let svc = service(&f);
 
-    svc.add_allowed_email(ROOT, "fresh@example.com", true)
+    let err = svc
+        .add_allowed_email(ROOT, "fresh@example.com", true)
         .await
         .unwrap_err();
+    assert!(
+        matches!(&err, SelfHostError::Internal(_)),
+        "the caller gets the send failure, not the kept address: {err:?}"
+    );
 
     {
         let state = f.0.lock().unwrap();
