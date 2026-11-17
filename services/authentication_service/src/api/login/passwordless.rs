@@ -121,10 +121,27 @@ pub async fn handler(
                             tracing::warn!(error=?denial, "signup policy denied passwordless user creation");
                             signup_forbidden_response()
                         })?;
-                    if let Some(denied) =
-                        crate::api::selfhost_admin::signup_denied(&ctx, &lowercase_email).await
+                    if let Some(denied) = crate::api::selfhost_admin::signup_denied(
+                        &ctx,
+                        &lowercase_email,
+                        req.team_invite_link.as_deref(),
+                    )
+                    .await
                     {
                         return Err(denied);
+                    }
+
+                    // The user-created webhook re-checks the self-host policy;
+                    // tell it the invite link was already accepted here.
+                    let mut data = serde_json::Map::new();
+                    if req.is_agent {
+                        data.insert(AGENT_SIGNUP_DATA_KEY.into(), true.into());
+                    }
+                    if req.team_invite_link.is_some() && ctx.selfhost.is_some() {
+                        data.insert(
+                            crate::api::selfhost_admin::INVITE_LINK_SIGNUP_DATA_KEY.into(),
+                            true.into(),
+                        );
                     }
 
                     let fusionauth_user_id = ctx
@@ -134,9 +151,7 @@ pub async fn handler(
                                 email: (&lowercase_email).into(),
                                 password: generate_random_password().into(),
                                 username: None,
-                                data: req.is_agent.then(|| {
-                                    serde_json::json!({ AGENT_SIGNUP_DATA_KEY: true })
-                                }),
+                                data: (!data.is_empty()).then(|| data.into()),
                             },
                             true,
                             ip_context.origin_ip(),

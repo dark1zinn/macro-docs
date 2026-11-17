@@ -358,6 +358,16 @@ impl SelfHostRepo for PgSelfHostRepo {
         .await?;
         Ok(granted)
     }
+
+    async fn invite_link_exists(&self, token: uuid::Uuid) -> anyhow::Result<bool> {
+        let exists = sqlx::query_scalar!(
+            r#"SELECT EXISTS(SELECT 1 FROM team_invite_link WHERE token = $1) AS "exists!""#,
+            token
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(exists)
+    }
 }
 
 #[cfg(test)]

@@ -191,6 +191,7 @@ export * from './mergeGithubPullRequestResponsePullRequest';
 export * from './passwordlessCallbackParams';
 export * from './passwordlessRequest';
 export * from './passwordlessRequestReferralCode';
+export * from './passwordlessRequestTeamInviteLink';
 export * from './passwordlessStartedResponse';
 export * from './passwordlessStartedResponseCode';
 export * from './passwordRequest';

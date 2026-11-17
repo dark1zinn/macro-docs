@@ -238,3 +238,24 @@ fn only_explicit_signup_metadata_requests_an_agent() {
     ))));
     assert!(!signup_requested_agent(&with_data(None)));
 }
+
+/// Only an explicit `true` marks an invite-link sign-up; it sits alongside the
+/// agent flag on the same user.
+#[test]
+fn only_explicit_metadata_marks_an_invite_link_signup() {
+    use crate::api::selfhost_admin::invite_link_signup;
+
+    let both = serde_json::json!({ "isAgent": true, "selfhostInviteLinkSignup": true });
+    assert!(invite_link_signup(Some(&both)));
+    assert!(signup_requested_agent(&FusionAuthWebhookUser {
+        data: Some(both),
+        ..webhook_user(None, None, None)
+    }));
+    assert!(!invite_link_signup(Some(&serde_json::json!({
+        "selfhostInviteLinkSignup": "yes"
+    }))));
+    assert!(!invite_link_signup(Some(
+        &serde_json::json!({ "isAgent": true })
+    )));
+    assert!(!invite_link_signup(None));
+}

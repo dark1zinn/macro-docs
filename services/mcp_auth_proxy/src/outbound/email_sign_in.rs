@@ -121,6 +121,7 @@ impl EmailCodeProvider for AuthServiceEmailCodes {
                         redirect_uri: self.redirect_uri.clone(),
                         referral_code: None,
                         is_agent: false,
+                        team_invite_link: None,
                     })
                     .send()
                     .await

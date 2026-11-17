@@ -76,6 +76,9 @@ pub trait SelfHostRepo: Send + Sync + 'static {
 
     /// Whether `email` may sign up under `InviteOnly`: it is allowlisted or has a team invite.
     async fn has_signup_grant(&self, email: &str) -> anyhow::Result<bool>;
+
+    /// Whether `token` is a workspace's current invite link.
+    async fn invite_link_exists(&self, token: Uuid) -> anyhow::Result<bool>;
 }
 
 /// Roles for a user, keyed by macro user id.

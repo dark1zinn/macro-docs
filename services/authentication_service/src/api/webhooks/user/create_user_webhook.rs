@@ -337,8 +337,11 @@ async fn create_user_webhook(ctx: &ApiContext, req: FusionAuthUserWebhook) -> an
     }
 
     // Self-host signup policy, for paths that skip the login handlers (SSO).
+    // A passwordless sign-up the login handler allowed through a workspace
+    // invite link has no email grant to find here.
     if let Some(selfhost) = ctx.selfhost.as_ref()
-        && !selfhost.authorize_signup(&email).await?
+        && !crate::api::selfhost_admin::invite_link_signup(req.event.user.data.as_ref())
+        && !selfhost.authorize_signup(&email, None).await?
     {
         anyhow::bail!("self-host signup policy denied user creation");
     }

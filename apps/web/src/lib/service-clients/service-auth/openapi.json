@@ -9365,6 +9365,10 @@
           "referral_code": {
             "type": ["string", "null"],
             "description": "The referral code"
+          },
+          "team_invite_link": {
+            "type": ["string", "null"],
+            "description": "The workspace invite link the person signs up through, if any. Self-\nhosted invite-only servers let its holder create an account."
           }
         }
       },
