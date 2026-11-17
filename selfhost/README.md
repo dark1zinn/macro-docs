@@ -46,7 +46,16 @@ built with `VITE_SELF_HOSTED=true`):
 
 - **The first account to sign up becomes the root administrator.** On an
   existing install with no administrator, the oldest account is promoted at
-  the next start.
+  the next start. To keep that for yourself, set `MACRO_SELFHOST_SETUP_TOKEN`
+  (at least 32 characters, for example `openssl rand -hex 32`): no account
+  becomes root by signing up first. Sign up with your email, choose **Use the
+  setup token** on the code screen and enter it; that account becomes root
+  without any mail. The token works once, while no root exists.
+- **A closed server needs no outgoing mail.** With the `mailcatcher` profile
+  and `SMTP_RELAY_HOST=mailpit`, nothing is delivered: every mail, sign-in
+  codes included, is kept, and administrators read it under **Settings →
+  Self-host → Server mail** and pass codes on to the people signing up.
+  Mailpit itself is not published.
 - **Signups are invite-only after that.** A new account is accepted when its
   email is on the allowed list or has a pending team invite. The
   administrator changes this, allows emails (optionally emailing each person
@@ -112,7 +121,7 @@ Enable profiles with `COMPOSE_PROFILES` in `.env`, comma-separated, or with
 |`slack`|Slack import worker||
 |`calls`|Audio and video calls (LiveKit). Signalling goes through the gateway at `/livekit`; media uses TCP 7881 and UDP 7882 on the host, which users must reach|`MACRO_CALLS_ENABLED=true`. LiveKit discovers the host's public IP; on a LAN or localhost set `MACRO_LIVEKIT_NODE_IP` and `MACRO_LIVEKIT_USE_EXTERNAL_IP=false`|
 |`https`|Automatic TLS on 80/443|`MACRO_DOMAIN`; don't use it under Coolify|
-|`mailcatcher`|Mailpit: keeps every outgoing mail in a local inbox at `http://127.0.0.1:8025` instead of delivering it|`SMTP_RELAY_HOST=mailpit`, `SMTP_RELAY_PORT=1025`, `SMTP_RELAY_TLS_LEVEL=may`. For trying the stack only; the relay still refuses recipients whose domain has no mail server|
+|`mailcatcher`|Mailpit: keeps every outgoing mail instead of delivering it; administrators read it under **Settings → Self-host → Server mail**|`SMTP_RELAY_HOST=mailpit`, `SMTP_RELAY_PORT=1025`, `SMTP_RELAY_TLS_LEVEL=may`. The relay still refuses recipients whose domain has no mail server|
 |`observability`|Grafana with Tempo, Loki and Prometheus (`grafana/otel-lgtm`) at `http://127.0.0.1:3001`, no login|`MACRO_OTEL_GRPC_ENDPOINT=http://otel-lgtm:4317`, `MACRO_OTEL_HTTP_ENDPOINT=http://otel-lgtm:4318`. Without them nothing is exported|
 
 When a feature is off, its API routes answer `503`.

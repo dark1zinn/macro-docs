@@ -15,11 +15,13 @@ signups. Every admin action is audited. Off unless `MACRO_SELF_HOSTED=true`.
 ## Scope
 
 - Owns: entitlement roles on account creation and startup backfill, root
-  claim, signup policy and allowlist, server invitations to allowed emails
+  claim (first account, or the setup token when `MACRO_SELFHOST_SETUP_TOKEN`
+  is set), signup policy and allowlist, server invitations to allowed emails
   (at most one per address per week, tracked in `last_invited_at`), the
   instance-wide view of workspace invite links and email invites (revoke,
-  resend, resend inside the window), admin user listing, promotion,
-  disabling, the admin audit log and its CSV export (`src/export.rs`).
+  resend, resend inside the window), the captured outgoing mail (Mailpit,
+  `src/outbound/mailpit.rs`), admin user listing, promotion, disabling, the
+  admin audit log and its CSV export (`src/export.rs`).
 - Not here: HTTP routes and the login/webhook hooks →
   `services/authentication_service/src/api/selfhost_admin.rs`; schema →
   `crates/macro_db_client/migrations/*_selfhost_*.sql`; workspace invite rules
@@ -61,3 +63,7 @@ signups. Every admin action is audited. Off unless `MACRO_SELF_HOSTED=true`.
   `SendNotificationRequest::with_email_outside_rate_limit` in `notification`,
   `invite_email/src/server_invite.rs` with `templates/server_invite.html`, and
   `ServerInvite` in `model_notifications`' digest block list.
+- The setup token hooks into upstream's
+  `authentication_service/src/api/oauth/passwordless_callback.rs`: it is
+  checked before FusionAuth sees anything, the login completes with the
+  stored code, and root is claimed only after the login succeeds.
