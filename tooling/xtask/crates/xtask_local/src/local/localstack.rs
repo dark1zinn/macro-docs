@@ -20,7 +20,7 @@ pub fn provision(instance: &Instance) -> Result<()> {
     rt.block_on(provision_async(&url))
 }
 
-async fn provision_async(url: &str) -> Result<()> {
+pub(super) async fn provision_async(url: &str) -> Result<()> {
     let cfg = macro_aws_config::local_aws_config(url).await;
 
     let sqs = aws_sdk_sqs::Client::new(&cfg);
@@ -87,6 +87,10 @@ async fn create_kms_keys(kms: &aws_sdk_kms::Client) -> Result<()> {
         (
             resources::MCP_OAUTH_KMS_ALIAS,
             "MCP OAuth authorization code encryption key (local)",
+        ),
+        (
+            resources::MICROSOFT_TOKEN_KMS_ALIAS,
+            "Microsoft refresh token envelope encryption key (local)",
         ),
         (
             resources::WHATSAPP_SESSION_KMS_ALIAS,

@@ -5,6 +5,14 @@ pub mod model;
 #[cfg(feature = "ports")]
 pub mod email_privacy;
 
+/// Bounded rule definitions and audit vocabulary for selected contribution.
+#[cfg(feature = "ports")]
+pub mod email_rules;
+
+/// Consent-generation storage for policy APIs and background work.
+#[cfg(feature = "ports")]
+pub mod email_policy;
+
 /// Static list of generic/personal email-provider domains to exclude
 /// from CRM populate
 #[cfg(feature = "ports")]
@@ -56,6 +64,13 @@ pub mod pipeline_workflows;
 /// CRM pipelines and their lifecycle.
 #[cfg(feature = "ports")]
 pub mod pipelines;
+/// Company and contact chip titles, read many at a time.
+#[cfg(feature = "ports")]
+pub mod previews;
+
+/// Pipeline outcome and per-amount currency fields.
+#[cfg(feature = "ports")]
+pub mod pipeline_commercial;
 
 /// Explicit contact field edits.
 #[cfg(feature = "ports")]

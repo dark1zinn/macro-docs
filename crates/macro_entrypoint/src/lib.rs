@@ -215,7 +215,8 @@ impl MacroEntrypoint {
                 // ship as OTLP log records (Loki, when the collector is the
                 // LGTM stack), so local logs are queryable next to the traces
                 // they belong to.
-                let export_otel = OtelExporterOtlpEndpoint::new().is_some();
+                let export_otel =
+                    OtelExporterOtlpEndpoint::new().is_some_and(|endpoint| !endpoint.is_empty());
                 let tracer_provider =
                     export_otel.then(|| init_opentelemetry("local".to_string(), None));
                 let logger_provider = export_otel.then(|| init_otel_logs("local".to_string()));
@@ -458,7 +459,11 @@ fn init_opentelemetry(
         }
     }
 
-    provider.build()
+    let provider = provider.build();
+    // Spans with recorded start/end times (durable waits) use the OpenTelemetry
+    // API directly; route them through the same exporters as tracing spans.
+    opentelemetry::global::set_tracer_provider(provider.clone());
+    provider
 }
 
 /// OTLP log export for the [`OpenTelemetryTracingBridge`]: tracing events

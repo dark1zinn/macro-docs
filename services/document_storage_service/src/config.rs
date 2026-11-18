@@ -67,10 +67,23 @@ env_vars! {
 }
 
 maybe_env_vars! {
+    /// Passwords vault endpoint; provision together with issuer and signing key.
+    pub struct OpenbaoAddress;
+    /// Issuer accepted by the namespace-scoped OpenBao JWT role.
+    pub struct PasswordsJwtIssuer;
+    /// PEM RSA key minting short-lived team-bound OpenBao service JWTs.
+    pub struct PasswordsJwtSigningKey;
     /// Rollout gate for entities owned by bots or teams.
     pub struct EnableNonUserOwners;
     /// Optional name of the LiveKit agent to dispatch for call transcription.
     pub struct LivekitTranscriptionAgentName;
+    /// `false` stops the periodic sweep of LiveKit rooms, for installs that
+    /// run no LiveKit server (calls are then unavailable). Unset: sweep.
+    pub struct LivekitRoomSweepEnabled;
+    /// The LiveKit URL handed to clients when it differs from the one this
+    /// service calls (e.g. a public route in front of an internal server).
+    /// Unset: clients get `LIVEKIT_SERVER_URL`.
+    pub struct LivekitPublicUrl;
     /// Shared secret for internal call endpoints (e.g. transcript ingestion from the agent).
     pub struct InternalCallSecret;
     /// Public base URL of this service (e.g. `https://gateway.macro.com/dss`),
@@ -96,6 +109,9 @@ maybe_env_vars! {
 #[derive(macro_config::MacroConfig)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct Config {
+    pub openbao_address: OpenbaoAddress,
+    pub passwords_jwt_issuer: PasswordsJwtIssuer,
+    pub passwords_jwt_signing_key: PasswordsJwtSigningKey,
     /// Required PostHog project key for backend feature flags.
     pub posthog_api_key: PosthogApiKey,
     /// PostHog host (optional)

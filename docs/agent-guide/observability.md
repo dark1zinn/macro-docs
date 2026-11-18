@@ -145,7 +145,7 @@ trace:
 | `share.target` | One recipient or channel: finding its channel, sending its message, and granting access. |
 | `share.find_channel` | Finding or creating the direct message or group for people, around `http POST /dss/channels/get_or_create_dm` or `get_or_create_private`. |
 | `share.send_message` | One message, around `http POST /dss/messages/channel/<channel.id>`. |
-| `http …` under `share.target` | One channel access grant, such as `http PATCH /dss/documents/<id>`. With `enable-graphql-soup` on, a grant for a document, folder, chat, or email thread is an `entity.update_share_policy` span (`entity.type`, `entity.id`) around the `UpdateEntitySharePolicies` mutation instead. |
+| `http …` under `share.target` | One channel access grant, such as `http PATCH /dss/documents/<id>`. A grant for a document, folder, chat, or email thread is an `entity.update_share_policy` span (`entity.type`, `entity.id`) around the `UpdateEntitySharePolicies` mutation instead. |
 
 Each `http …` span continues into the backend trace. The root records
 `share.location` (`bulk_share`), `entity.ids`, the `share.items` and `share.targets` counts,
@@ -455,6 +455,13 @@ Phases you will see:
   `quick_access.materialize` and the `search.page_count`,
   `search.materialized_count` and `search.index.count` attributes;
   `search.index.last_build_ms` is the latest index rebuild, not another phase.
+  `search.refresh` is false on the first answer for a query or category and
+  true when a cache change replays a window already on screen, so filter on
+  `search.refresh:false` with `search.query_length` above 0 for what a person
+  waited on after typing.
+  `search.engine_restarted` is true when the cache engine was replaced while
+  the search was pending, which is a search issued in the restart window after
+  returning to the tab.
   Only query lengths and counts are recorded. `email.drafts.discover` is
   event-driven local draft discovery, coalescing same-microtask notifications.
 - Preloading: block intent records `block.preload` with parallel

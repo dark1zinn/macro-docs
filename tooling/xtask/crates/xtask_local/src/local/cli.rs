@@ -29,11 +29,11 @@ enum Cmd {
     /// Build the minimal runtime image.
     RuntimeImage(ForceArg),
     /// Render the per-instance compose override and print its path.
-    GenCompose(InstanceArgs),
+    GenCompose(ComposeArgs),
     /// Print the inventoried backend path prefixes for an external Vite launcher.
     FrontendProxyRoutes,
     /// Render merged compose and assert the no-build / runtime-image invariants.
-    ValidateLocalCompose(InstanceArgs),
+    ValidateLocalCompose(ComposeArgs),
     /// Resolve env layers and assert mode-appropriate invariants.
     ValidateLocalEnv(ValidateEnvArgs),
     /// Create the declared Kafka event topics on the instance's local broker.
@@ -60,6 +60,9 @@ enum Cmd {
     /// wipes; prefer `run-local`, which runs without a terminal too.
     #[command(subcommand)]
     Stack(StackCmd),
+    /// In-container bootstrap of the self-host compose stack (`selfhost/`).
+    #[cfg(feature = "selfhost")]
+    SelfhostInit(super::selfhost::Args),
 }
 
 #[derive(Subcommand)]
@@ -98,6 +101,15 @@ pub struct InstanceArgs {
     pub port_base: Option<u16>,
 }
 
+/// An instance plus the computers fleet its compose is rendered for.
+#[derive(Args, Clone, Default)]
+pub struct ComposeArgs {
+    #[command(flatten)]
+    pub instance: InstanceArgs,
+    #[command(flatten)]
+    pub computers: super::computers::ComputersArgs,
+}
+
 #[derive(Args, Clone, Default)]
 pub struct EnvArgs {
     /// Skip the optional Doppler layer entirely.
@@ -129,6 +141,8 @@ pub struct RunArgs {
     pub env: EnvArgs,
     #[command(flatten)]
     pub build: BuildArgs,
+    #[command(flatten)]
+    pub computers: super::computers::ComputersArgs,
     /// Do not start or serve the frontend.
     #[arg(long)]
     pub no_frontend: bool,
@@ -270,8 +284,16 @@ fn run(cli: Cli) -> Result<()> {
             Ok(())
         }
         Cmd::ValidateLocalCompose(a) => {
-            let instance = super::instance::Instance::resolve(a.instance.as_deref(), a.port_base)?;
-            super::validate::local_compose(&instance, Mode::Local)
+            let instance = super::instance::Instance::resolve(
+                a.instance.instance.as_deref(),
+                a.instance.port_base,
+            )?;
+            let computers = super::computers::Computers::new(
+                Mode::Local,
+                a.computers.fleet(super::computers::Fleet::Docker),
+                &instance,
+            );
+            super::validate::local_compose(&instance, Mode::Local, &computers)
         }
         Cmd::ValidateLocalEnv(a) => {
             let instance = super::instance::Instance::resolve(
@@ -316,6 +338,8 @@ fn run(cli: Cli) -> Result<()> {
             StackCmd::Status(a) => super::stack::status(&a),
             StackCmd::Down(a) => super::stack::down(&a),
         },
+        #[cfg(feature = "selfhost")]
+        Cmd::SelfhostInit(args) => super::selfhost::run(args),
     }
 }
 

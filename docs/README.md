@@ -11,11 +11,21 @@
 
 Docs that belong to one app, service, or crate live next to its code.
 
+Self-hosting: [operator guide](../selfhost/README.md) for the `selfhost/docker-compose.yml` stack.
+
 External chats: [architecture](architecture/external-chats.md), its WhatsApp
 provider ([linked devices](architecture/whatsapp-linked-devices.md)) and the
 [External view walkthrough](agent-guide/external.md).
 
 Document sync: [DSS sync router](architecture/sync-router.md).
+
+Email: [frontend architecture](architecture/email.md) and
+[backend composition and boundaries](architecture/email-backend.md).
+
+Billing: the [Stripe event inbox](architecture/stripe-event-inbox.md).
+
+Macro computers: [architecture](architecture/macro-computers.md) and the
+[setup trace runbook](runbooks/computer-setup-traces.md).
 
 Contacts: [disk-backed directory implementation plan](design/disk-backed-contacts.md),
 [approved name-focused search design](design/contact-name-search-proposal.md) (implementation in progress).
@@ -28,3 +38,5 @@ Bots: [building a bot](guides/bots.md) (set one up in the app, then search and
 post from the TypeScript SDK).
 
 Agent session activity: [correlation and visibility](architecture/agent-activity-correlation.md).
+
+CRM: [selective email contribution design](design/crm-selective-email-contribution.md).

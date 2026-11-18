@@ -3,6 +3,7 @@
 **/.env*
 **/*.env
 **/*.env.*
+!selfhost/.env.example
 **/.dev.vars*
 .idea/
 **/.DS_Store
@@ -19,6 +20,8 @@ run-local.fish
 **/coverage
 !packages/sdk/src/coverage/
 !packages/sdk/src/coverage/**
+!crates/email_e2e/coverage/
+!crates/email_e2e/coverage/**
 **/.nyc_output
 **/.cache
 **/.vite

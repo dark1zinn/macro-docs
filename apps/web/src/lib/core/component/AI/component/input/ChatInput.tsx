@@ -25,6 +25,7 @@ import { createComposerLayout } from '@core/component/LexicalMarkdown/utils/crea
 import { toast } from '@core/component/Toast/Toast';
 import { fileTypeToBlockName } from '@core/constant/allBlocks';
 import { PaywallKey, usePaywallState } from '@core/constant/PaywallState';
+import { isModelAvailable } from '@core/constant/selfHostedAiProviders';
 import { TOKENS } from '@core/hotkey/tokens';
 import { hapticImpact } from '@core/mobile/haptics';
 import { isMobile } from '@core/mobile/isMobile';
@@ -38,10 +39,10 @@ import { createElementSize } from '@solid-primitives/resize-observer';
 import { createCallback } from '@solid-primitives/rootless';
 import { Button, ComposerSurface, cn, SendButton as UiSendButton } from '@ui';
 import { createEffect, createMemo, createSignal, Show } from 'solid-js';
-import { speedForModel } from '../../constant/speed';
-import { fastModeEnabled } from '../../signal/speed';
+import { speedForModel, speedsForModel } from '../../constant/speed';
+import { preferredSpeed, setPreferredSpeed } from '../../signal/speed';
 import { AttachmentList } from './Attachment';
-import { SpeedToggle } from './SpeedToggle';
+import { SpeedSelector } from './SpeedSelector';
 import { useAiDataConsentGate } from './useAiDataConsent';
 
 /**
@@ -89,7 +90,7 @@ export function ChatInput(props: ChatInputComponentProps) {
   // upsell at all.
   const modelOptions = createMemo(() => {
     const allowed = modelsForPlan(hasPaidAccess());
-    return PAID_MODELS.map((id) => ({
+    return PAID_MODELS.filter(isModelAvailable).map((id) => ({
       id,
       available: allowed.includes(id),
     }));
@@ -205,7 +206,7 @@ export function ChatInput(props: ChatInputComponentProps) {
       const sendInput: ChatSendInput = {
         content: markdownText(),
         model: opts?.modelOverride ?? model(),
-        speed: speedForModel(opts?.modelOverride ?? model(), fastModeEnabled()),
+        speed: speedForModel(opts?.modelOverride ?? model(), preferredSpeed()),
         attachments: attachments.attached(),
         toolset: toolsetSignal[0](),
         metaKey: opts?.metaKey,
@@ -326,7 +327,11 @@ export function ChatInput(props: ChatInputComponentProps) {
         onLocked={() => showPaywall(PaywallKey.O1_LIMIT)}
         compact={compactSelector()}
       />
-      <SpeedToggle model={model()} />
+      <SpeedSelector
+        offered={speedsForModel(model()).map((value) => ({ value }))}
+        value={speedForModel(model(), preferredSpeed())}
+        onChange={setPreferredSpeed}
+      />
       <DictationButton dictation={dictation} />
       <Show when={generating() && props.onStop} fallback={<SendButton />}>
         <StopButton />
@@ -446,6 +451,7 @@ export function ChatInput(props: ChatInputComponentProps) {
               </div>
             </Show>
             <div
+              data-composer-scroll
               id={CHAT_INPUT_TEXT_AREA_ID}
               class={cn(
                 'text-base text-ink touch:px-3 touch:py-2 not-touch:leading-[24.375px] not-touch:text-composer-ink',

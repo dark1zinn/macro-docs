@@ -26,7 +26,6 @@ use crate::{
 #[cfg(test)]
 mod test;
 
-const GOOGLE_AUTHORIZATION_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const GMAIL_IDENTITY_PROVIDER_NAME: &str = "google_gmail";
 /// The scope that makes a Google account a mailbox Macro can read and send
 /// from. A consent that leaves it out cannot provision an inbox, so the
@@ -82,8 +81,8 @@ pub enum InitGmailLinkError {
     /// Internal error
     #[error("internal error occurred")]
     InternalError(#[from] anyhow::Error),
-    /// The identity provider was not found
-    #[error("identity provider not found")]
+    /// No Gmail identity provider is configured on this deployment.
+    #[error("Google sign-in is not configured on this server")]
     IdentityProviderNotFound,
 }
 
@@ -93,7 +92,9 @@ impl IntoResponse for InitGmailLinkError {
         let status_code: StatusCode = match &self {
             InitGmailLinkError::TooManyInProgressLinks => StatusCode::TOO_MANY_REQUESTS,
             InitGmailLinkError::PaymentRequired => StatusCode::PAYMENT_REQUIRED,
-            InitGmailLinkError::InternalError(_) | InitGmailLinkError::IdentityProviderNotFound => {
+            // Not configured is a deployment state, not a failure.
+            InitGmailLinkError::IdentityProviderNotFound => StatusCode::SERVICE_UNAVAILABLE,
+            InitGmailLinkError::InternalError(_) => {
                 tracing::error!(error = ?self, "gmail link initiation failed");
                 StatusCode::INTERNAL_SERVER_ERROR
             }
@@ -187,18 +188,20 @@ pub async fn init_gmail_link_handler(
         .split_ascii_whitespace()
         .map(ToOwned::to_owned)
         .collect();
+    // Look the provider up before creating anything, so an unconfigured
+    // deployment doesn't accumulate pending links toward the limit above.
+    let gmail_idp_id = ctx
+        .auth_client
+        .get_identity_provider_id_by_name(GMAIL_IDENTITY_PROVIDER_NAME)
+        .await
+        .map_err(|_| InitGmailLinkError::IdentityProviderNotFound)?;
+
     let link_id = macro_db_client::in_progress_user_link::create_in_progress_google_link(
         &ctx.db,
         fusion_user_id,
         &requested_google_scopes,
     )
     .await?;
-
-    let gmail_idp_id = ctx
-        .auth_client
-        .get_identity_provider_id_by_name(GMAIL_IDENTITY_PROVIDER_NAME)
-        .await
-        .map_err(|_| InitGmailLinkError::IdentityProviderNotFound)?;
 
     // The state is signed and bound to this user, this link, and the Google
     // callback: the callback refuses anything else, so the authorization URL
@@ -216,11 +219,12 @@ pub async fn init_gmail_link_handler(
         .context("failed to sign OAuth state")?;
 
     let authorization_url = google_authorization_url(
+        &ctx.google_authorization_url,
         ctx.auth_client.google_client_id(),
         &redirect_uri,
         &authorization_scopes,
         &state_str,
-    )?;
+    );
 
     Ok(Json(InitGmailLinkResponse {
         authorization_url: authorization_url.to_string(),
@@ -248,13 +252,13 @@ fn gmail_authorization_scopes(calendar_scope_enabled: bool, scopes: ConsentScope
 }
 
 fn google_authorization_url(
+    endpoint: &Url,
     client_id: &str,
     redirect_uri: &str,
     scopes: &str,
     state: &str,
-) -> anyhow::Result<Url> {
-    let mut authorization_url =
-        Url::parse(GOOGLE_AUTHORIZATION_URL).context("invalid Google authorization URL")?;
+) -> Url {
+    let mut authorization_url = endpoint.clone();
     authorization_url
         .query_pairs_mut()
         .append_pair("client_id", client_id)
@@ -265,7 +269,7 @@ fn google_authorization_url(
         .append_pair("access_type", "offline")
         .append_pair("include_granted_scopes", "true")
         .append_pair("prompt", "consent");
-    Ok(authorization_url)
+    authorization_url
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, utoipa::ToSchema)]

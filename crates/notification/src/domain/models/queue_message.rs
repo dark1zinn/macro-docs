@@ -128,6 +128,15 @@ impl EmailCreateBundle {
         self
     }
 
+    /// Moves the email to a rate-limit bucket of its own, derived from its
+    /// usual bucket and `send_id`.
+    pub(crate) fn in_own_bucket(mut self, send_id: Uuid) -> Self {
+        self.rate_limit_key = RateLimitKey::builder(&self.rate_limit_key.as_bytes())
+            .append(&send_id)
+            .finish();
+        self
+    }
+
     pub(crate) fn with_recipient<'a>(self, to: MacroUserIdStr<'a>) -> EmailNotification<'a> {
         let EmailCreateBundle {
             destination,

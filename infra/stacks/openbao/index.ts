@@ -143,7 +143,7 @@ new aws.kms.Alias(`${BASE_NAME}-seal-key-alias`, {
   name: `alias/${BASE_NAME}-${stack}`,
   targetKeyId: sealKey.keyId,
 });
-// ECS Exec: the one-time `bao operator init` and the provisioning port-forward.
+// ECS Exec: the one-time `bao operator init` and the operator tunnel.
 new aws.iam.RolePolicy(`${BASE_NAME}-exec`, {
   role: taskRole.id,
   policy: {
@@ -200,6 +200,18 @@ new aws.vpc.SecurityGroupIngressRule(`${BASE_NAME}-alb-in-dss`, {
   toPort: HTTPS_PORT,
   tags,
 });
+// The operator tunnel: an SSM port-forward runs inside the OpenBao task and
+// reaches the ALB from there, so operators get the verified HTTPS origin
+// (README "Operator tunnel"). The task already serves the API itself.
+new aws.vpc.SecurityGroupIngressRule(`${BASE_NAME}-alb-in-task`, {
+  securityGroupId: loadBalancerSecurityGroup.id,
+  description: 'HTTPS from the OpenBao task (operator SSM tunnel)',
+  referencedSecurityGroupId: taskSecurityGroup.id,
+  ipProtocol: 'tcp',
+  fromPort: HTTPS_PORT,
+  toPort: HTTPS_PORT,
+  tags,
+});
 new aws.vpc.SecurityGroupEgressRule(`${BASE_NAME}-alb-out-task`, {
   securityGroupId: loadBalancerSecurityGroup.id,
   description: 'OpenBao API',
@@ -221,7 +233,8 @@ const taskIngress = new aws.vpc.SecurityGroupIngressRule(
     tags,
   }
 );
-// KMS, ECR/Quay, SSM, and the Datadog intake are all HTTPS.
+// KMS, Quay, the seal plugin's registry (ghcr.io), SSM, and the Datadog
+// intake are all HTTPS.
 const taskHttpsEgress = new aws.vpc.SecurityGroupEgressRule(
   `${BASE_NAME}-task-https-out`,
   {

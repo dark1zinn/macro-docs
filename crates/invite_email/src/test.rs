@@ -731,3 +731,48 @@ fn team_invites_queued_before_reminders_read_as_first_sends() {
     let parsed: InviteToTeamMetadata = serde_json::from_value(wire).unwrap();
     assert!(!parsed.reminder);
 }
+
+fn make_server_invite(recipient: &str) -> ServerInvite {
+    ServerInvite {
+        recipient_email: EmailStr::try_from(recipient.to_string()).unwrap(),
+        invited_by: MacroUserIdStr::try_from_email("admin@example.com").unwrap(),
+        inviter_name: Some("Ada <b>Admin</b>".to_string()),
+    }
+}
+
+/// A server invitation links to sign-up with no referral code, names the
+/// admin safely, and sends replies to the admin.
+#[test]
+fn server_invites_link_to_signup_without_a_referral_code() {
+    let email = make_server_invite("new@example.com").format_email();
+    let signup = signup_url(Environment::new_or_prod()).to_string();
+
+    assert!(email.body.contains(&format!("href=\"{signup}\"")));
+    assert!(!email.body.contains("referral_code"));
+    assert!(email.text.as_deref().unwrap().contains(&signup));
+    assert!(!email.text.as_deref().unwrap().contains("referral_code"));
+    assert!(!email.body.contains("<b>Admin</b>"));
+    assert!(email.body.contains("admin@example.com"));
+    assert_eq!(email.from_name.as_deref(), Some("Ada <b>Admin</b>"));
+    assert_eq!(
+        email.reply_to.map(|r| r.0.as_ref().to_owned()),
+        Some("admin@example.com".to_owned())
+    );
+}
+
+/// One invitation per address per resend interval, counted per address.
+#[test]
+fn server_invites_are_limited_per_address() {
+    assert_eq!(
+        ServerInvite::rate_limit_config().window,
+        ServerInvite::RESEND_INTERVAL
+    );
+    assert_eq!(ServerInvite::rate_limit_config().max_count, 1);
+    let key = |recipient| {
+        make_server_invite(recipient)
+            .rate_limit_key()
+            .to_hex_string()
+    };
+    assert_eq!(key("a@example.com"), key("a@example.com"));
+    assert_ne!(key("a@example.com"), key("b@example.com"));
+}

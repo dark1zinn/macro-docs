@@ -70,10 +70,17 @@ pub(crate) async fn setup_and_serve(state: ApiContext) -> anyhow::Result<()> {
                     validate_api_version,
                 ))
                 .layer(
-                    macro_cors::cors_layer_with_headers(vec![axum::http::HeaderName::from_static(
-                        complete_graph::MAIL_CACHE_PROFILE_HEADER,
-                    )])
-                    .expose_headers([axum::http::header::RETRY_AFTER]),
+                    macro_cors::cors_layer_with_headers(vec![
+                        axum::http::HeaderName::from_static("x-macro-passwords"),
+                        axum::http::HeaderName::from_static(middleware::crm_access::REQUEST_HEADER),
+                        axum::http::HeaderName::from_static(
+                            complete_graph::MAIL_CACHE_PROFILE_HEADER,
+                        ),
+                    ])
+                    .expose_headers([
+                        axum::http::header::RETRY_AFTER,
+                        axum::http::HeaderName::from_static(middleware::crm_access::HEADER),
+                    ]),
                 )
                 .layer(CompressionLayer::new().gzip(true)),
         )
@@ -103,6 +110,9 @@ pub(crate) async fn setup_and_serve(state: ApiContext) -> anyhow::Result<()> {
     sync_sessions.shutdown().await;
     result
 }
+
+/// Where [`items_router`] is mounted.
+pub(crate) const ITEMS_PATH: &str = "/items";
 
 fn items_router(state: ApiContext) -> Router<ApiContext> {
     soup::inbound::axum_router::soup_router(state.soup_router_state.clone())
@@ -174,7 +184,7 @@ fn api_router(state: ApiContext) -> Router {
             ]),
         )
         .nest("/instructions", instructions::router())
-        .nest("/items", items_router(state.clone()))
+        .nest(ITEMS_PATH, items_router(state.clone()))
         .nest(
             "/threads",
             threads::router(state.clone()).layer(axum::middleware::from_fn(
@@ -450,6 +460,25 @@ fn api_router(state: ApiContext) -> Router {
         )
         .nest("/recents", recents::router())
         .nest("/saved_views", saved_views::router())
+        .nest(
+            "/passwords",
+            passwords::inbound::router::router(state.passwords_state.clone()).merge(
+                passwords::inbound::agent_router::review_router(
+                    state.passwords_agent_state.clone(),
+                ),
+            ),
+        )
+        .nest(
+            "/passwords/agent",
+            passwords::inbound::agent_router::agent_router(state.passwords_agent_state.clone()),
+        )
+        .layer(axum::middleware::from_fn_with_state(
+            (
+                state.clone(),
+                middleware::crm_access::SignalCache::default(),
+            ),
+            middleware::crm_access::handler,
+        ))
         .with_state(state);
     let dss_router = Router::new()
         .nest("/{version}", internal_router.clone())

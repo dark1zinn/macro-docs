@@ -11,6 +11,7 @@ import {
   enableMultiInbox,
   enableSidebarPromotions,
 } from '@core/constant/featureFlags';
+import { isIntegrationAvailable } from '@core/constant/selfHostedAiProviders';
 import { useUserId } from '@core/context/user';
 import { useAddInboxFlow } from '@core/email-link';
 import { fireAndForget } from '@core/util/fireAndForget';
@@ -107,6 +108,7 @@ export function ConnectCalendarsPromotion(props: { class?: string }) {
       applies={allOf(
         flagVerdict(promotions()),
         flagVerdict(multiInbox()),
+        isIntegrationAvailable('google'),
         state() === undefined ? undefined : !state()?.satisfied
       )}
       logos={COPY.logos}

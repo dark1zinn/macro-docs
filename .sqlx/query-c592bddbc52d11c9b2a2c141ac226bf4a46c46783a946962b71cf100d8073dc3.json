@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM selfhost_signup_allowlist WHERE email = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c592bddbc52d11c9b2a2c141ac226bf4a46c46783a946962b71cf100d8073dc3"
+}

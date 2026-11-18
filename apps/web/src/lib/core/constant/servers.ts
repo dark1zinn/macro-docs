@@ -21,6 +21,7 @@ const serverHostLocal: Servers = {
   'scheduled-action': 'http://localhost:8101/scheduled-action',
   'agent-harness': 'http://localhost:8101',
   preview: 'http://localhost:8101/preview',
+  'agent-git': 'http://localhost:8101/agent-git',
 } as const;
 
 const devServerSuffix = import.meta.env.MODE === 'development' ? '-dev' : '';
@@ -53,6 +54,7 @@ const directServerHostRemote = {
   'scheduled-action': `${gatewayHost}/scheduled-action`,
   'agent-harness': `${gatewayHost}/agent-harness`,
   preview: `${gatewayHost}/preview`,
+  'agent-git': `${gatewayHost}/agent-git`,
 } as const;
 
 type Servers = Record<keyof typeof directServerHostRemote, string>;
@@ -121,7 +123,10 @@ function proxyServers(): Servers | undefined {
   if (!proxyOrigin || !wsProxyOrigin) return undefined;
   return {
     'auth-service': `${proxyOrigin}/auth`,
-    'auth-logout': serverHostLocal['auth-logout'],
+    // The session is already gone server-side; land on this origin's login
+    // page (under the bundle's base) rather than a fixed dev-server port
+    // nothing serves here.
+    'auth-logout': `${proxyOrigin}${import.meta.env.BASE_URL.replace(/\/?$/, '/')}login`,
     'pdf-service': serverHostLocal['pdf-service'], // no local container
     'document-storage-service': `${proxyOrigin}/dss`,
     'websocket-service': `${wsProxyOrigin}/websocket`,
@@ -140,6 +145,7 @@ function proxyServers(): Servers | undefined {
     'calendar-service': `${proxyOrigin}/calendar`,
     'image-proxy-service': `${proxyOrigin}/image-proxy`,
     'scheduled-action': `${proxyOrigin}/scheduled-action`,
+    'agent-git': `${proxyOrigin}/agent-git`,
   };
 }
 
@@ -250,6 +256,8 @@ const nativeSessionServices = {
   'scheduled-action': SERVER_HOSTS['scheduled-action'],
   'agent-harness': SERVER_HOSTS['agent-harness'],
   preview: SERVER_HOSTS['preview'],
+  // Git remotes for agent workspaces; the app sends no requests to it.
+  'agent-git': undefined,
 } satisfies Record<keyof Servers, string | undefined>;
 
 /**

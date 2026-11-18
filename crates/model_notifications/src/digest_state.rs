@@ -13,5 +13,6 @@ pub fn digest_email_block_list() -> EmailBlockList {
         .append::<InviteToTeamMetadata>()
         .append::<InviteToMacro>()
         .append::<invite_email::CallInvite>()
+        .append::<invite_email::ServerInvite>()
         .append::<ColleagueJoinedMacro>()
 }

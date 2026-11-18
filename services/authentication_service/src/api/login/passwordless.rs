@@ -121,6 +121,35 @@ pub async fn handler(
                             tracing::warn!(error=?denial, "signup policy denied passwordless user creation");
                             signup_forbidden_response()
                         })?;
+                    if let Some(denied) = crate::api::selfhost_admin::signup_denied(
+                        &ctx,
+                        &lowercase_email,
+                        req.team_invite_link.as_deref(),
+                    )
+                    .await
+                    {
+                        return Err(denied);
+                    }
+
+                    // The user-created webhook re-checks the self-host policy
+                    // without the link; when the link was what admitted this
+                    // sign-up, tell it so.
+                    let mut data = serde_json::Map::new();
+                    if req.is_agent {
+                        data.insert(AGENT_SIGNUP_DATA_KEY.into(), true.into());
+                    }
+                    if crate::api::selfhost_admin::admitted_by_invite_link(
+                        &ctx,
+                        &lowercase_email,
+                        req.team_invite_link.as_deref(),
+                    )
+                    .await
+                    {
+                        data.insert(
+                            crate::api::selfhost_admin::INVITE_LINK_SIGNUP_DATA_KEY.into(),
+                            true.into(),
+                        );
+                    }
 
                     let fusionauth_user_id = ctx
                         .auth_client
@@ -129,9 +158,7 @@ pub async fn handler(
                                 email: (&lowercase_email).into(),
                                 password: generate_random_password().into(),
                                 username: None,
-                                data: req.is_agent.then(|| {
-                                    serde_json::json!({ AGENT_SIGNUP_DATA_KEY: true })
-                                }),
+                                data: (!data.is_empty()).then(|| data.into()),
                             },
                             true,
                             ip_context.origin_ip(),

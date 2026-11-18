@@ -1,12 +1,17 @@
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { toast } from '@core/component/Toast/Toast';
 import { enableMultiInbox } from '@core/constant/featureFlags';
+import { isIntegrationAvailable } from '@core/constant/selfHostedAiProviders';
 import { useUserId } from '@core/context/user';
 import { useAddInboxFlow } from '@core/email-link';
 import { calendarConsentScopes } from '@core/email-link/consent';
 import { fireAndForget } from '@core/util/fireAndForget';
+import {
+  useAvailabilityCalendarsQuery,
+  useSetAvailabilityCalendarMutation,
+} from '@queries/calendar/availability';
 import { useEmailLinksQuery } from '@queries/email/link';
-import { createSignal, Suspense } from 'solid-js';
+import { createMemo, createSignal, Suspense } from 'solid-js';
 import { CalendarTeamSettings } from '../calendar-team/calendar-team';
 import { SettingsPage } from '../settings/primitives';
 import {
@@ -29,6 +34,17 @@ function CalendarSettingsContent() {
   const multiInbox = useFeatureFlag(enableMultiInbox);
   const startAddInbox = useAddInboxFlow();
   const [preferences, setPreferences] = useCalendarPreferences();
+  const availability = useAvailabilityCalendarsQuery(userId);
+  const setAvailability = useSetAvailabilityCalendarMutation();
+  const countsAsBusy = createMemo(
+    () =>
+      new Map(
+        (availability.data?.calendars ?? []).map((calendar) => [
+          calendar.calendarId,
+          calendar.contributesToAvailability,
+        ])
+      )
+  );
   const [connecting, setConnecting] = createSignal(false);
   const [disconnect, setDisconnect] =
     createSignal<TurnOffCalendarTarget | null>(null);
@@ -98,6 +114,7 @@ function CalendarSettingsContent() {
         connecting={connecting()}
         canConnect={
           links.isSuccess &&
+          isIntegrationAvailable('google') &&
           (!accounts().some((a) => a.canManage) || multiInbox().enabled)
         }
         onRetry={() => {
@@ -129,6 +146,26 @@ function CalendarSettingsContent() {
           setPreferences('accountColors', id, color)
         }
         onSourceColor={(id, color) => setPreferences('sourceColors', id, color)}
+        countsAsBusy={(id) => countsAsBusy().get(id)}
+        onCountsAsBusyChange={(id, counts) => {
+          const user = userId();
+          if (!user) return;
+          setAvailability.mutate(
+            {
+              userId: user,
+              calendarIds: [id],
+              contributesToAvailability: counts,
+            },
+            {
+              onError: () =>
+                toast.failure('Could not save which calendars make you busy'),
+            }
+          );
+        }}
+        busyError={availability.isError && availability.data === undefined}
+        onBusyRetry={() =>
+          fireAndForget(availability.refetch(), 'calendar-settings')
+        }
       />
       <TurnOffCalendarDialog
         target={disconnect()}
@@ -154,7 +191,7 @@ export function CalendarSettings() {
   return (
     <SettingsPage
       title="Calendar"
-      description="Manage your connected accounts, calendar visibility, and colors."
+      description="Manage your connected accounts, calendar visibility, colors, and which calendars make you busy."
     >
       <CalendarConnectionSettings />
       <NextMeetingCountdownSetting />

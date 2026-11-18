@@ -75,6 +75,22 @@ describe('filterInboxGithubPrOption', () => {
 });
 
 describe('Assignee filter ordering', () => {
+  it('lists you, Unassigned and team members before agents', () => {
+    createRoot((dispose) => {
+      const picker = useAssigneePicker(
+        () => [],
+        () => true
+      );
+      expect(picker.options().map((option) => option.id)).toEqual([
+        'macro|alice@example.com',
+        'NO_ASSIGNEE',
+        'macro|teammate@example.com',
+        'bot|00000000-0000-0000-0000-000000000123',
+      ]);
+      dispose();
+    });
+  });
+
   it('keeps team rows stable during selection and reorders on reopening', () => {
     createRoot((dispose) => {
       const [ids, setIds] = createSignal(['macro|alice@example.com']);
@@ -94,13 +110,17 @@ describe('Assignee filter ordering', () => {
       expect(ordered().map((option) => option.id)).toEqual(initial);
       picker.onOpenChange(false);
       picker.onOpenChange(true);
-      expect(ordered()[0].id).toBe('macro|teammate@example.com');
-      expect(ordered()[1].id).toBe('bot|00000000-0000-0000-0000-000000000123');
+      expect(ordered().map((option) => option.id)).toEqual([
+        'macro|teammate@example.com',
+        'macro|alice@example.com',
+        'NO_ASSIGNEE',
+        'bot|00000000-0000-0000-0000-000000000123',
+      ]);
       dispose();
     });
   });
 
-  it('retains selected outsiders without offering unrelated contacts', () => {
+  it('allows re-adding a selected outsider only during the same opening', () => {
     createRoot((dispose) => {
       const [ids, setIds] = createSignal(['macro|outside@example.com']);
       const picker = useAssigneePicker(ids, () => true);
@@ -108,8 +128,21 @@ describe('Assignee filter ordering', () => {
       expect(picker.selectedIdsAtViewEntry()).toEqual([
         'macro|outside@example.com',
       ]);
-      expect(picker.options().at(-1)?.id).toBe('macro|outside@example.com');
+      expect(picker.options().map((option) => option.id)).toEqual([
+        'macro|alice@example.com',
+        'NO_ASSIGNEE',
+        'macro|teammate@example.com',
+        'macro|outside@example.com',
+        'bot|00000000-0000-0000-0000-000000000123',
+      ]);
       setIds([]);
+      expect(
+        picker
+          .options()
+          .some((option) => option.id === 'macro|outside@example.com')
+      ).toBe(true);
+      picker.onOpenChange(false);
+      picker.onOpenChange(true);
       expect(
         picker
           .options()

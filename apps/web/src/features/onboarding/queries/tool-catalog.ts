@@ -1,3 +1,4 @@
+import { isIntegrationAvailable } from '@core/constant/selfHostedAiProviders';
 import { createPipedreamCatalogSearch } from '@core/pipedream/catalog';
 import { fireAndForget } from '@core/util/fireAndForget';
 import { NATIVE_GITHUB_TOOL, ONBOARDING_FEATURED_TOOLS } from '../core/tools';
@@ -18,7 +19,12 @@ export function createOnboardingToolCatalog() {
           )
         : ONBOARDING_FEATURED_TOOLS;
       return [
-        ...featured,
+        // GitHub's featured entry links the GitHub account; the rest are Pipedream connectors.
+        ...featured.filter((tool) =>
+          isIntegrationAvailable(
+            tool.slug === NATIVE_GITHUB_TOOL.slug ? 'github' : 'pipedream'
+          )
+        ),
         ...catalog
           .entries()
           .filter((entry) => entry.app_slug !== NATIVE_GITHUB_TOOL.slug)

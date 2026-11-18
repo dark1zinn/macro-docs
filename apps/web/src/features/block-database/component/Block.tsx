@@ -2,6 +2,7 @@ import { ListSkeleton } from '@app/components/view-shell/ListSkeleton';
 import { openChatWithInput } from '@app/features/chat/ChatWithAgentButton';
 import { toQuerySchema } from '@app/features/database-query/queries/query-source';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
+import { createSearchParams } from '@app/lib/split-router';
 import { usePending } from '@app/observability/flow';
 import { useGlobalBlockOrchestrator } from '@components/app/GlobalAppState';
 import { useSplitLayout } from '@components/app/split-layout/layout';
@@ -11,7 +12,11 @@ import {
 } from '@components/app/split-layout/layoutUtils';
 import { useHasPaidAccess } from '@core/auth/license';
 import { useBlockId } from '@core/block';
-import { DATABASE_MODEL, modelsForPlan } from '@core/component/AI/constant';
+import {
+  DATABASE_MODEL,
+  databaseModelForPlan,
+  planIncludesModel,
+} from '@core/component/AI/constant';
 import { DocumentBlockContainer } from '@core/component/DocumentBlockContainer';
 import { toast } from '@core/component/Toast/Toast';
 import { enableDatabases } from '@core/constant/featureFlags';
@@ -60,7 +65,12 @@ import { createDatabaseSearch } from '../../database/primitives/database-search'
 import { createDatabaseUndo } from '../../database/primitives/undo-controller';
 import { createViewCreation } from '../../database/primitives/view-creation';
 import { databaseChat } from '../core/chat-context';
-import { createDatabaseViewSelection } from '../primitives/view-selection';
+import { databaseDetailSearch } from '../database-route';
+import {
+  createDatabaseViewSelection,
+  followRouteLocation,
+  selectLocation,
+} from '../primitives/view-selection';
 import { searchDatabase } from '../queries/database-search';
 import { toViewColumn } from '../queries/table-rows';
 import { trashDatabase } from '../queries/trash-database';
@@ -131,14 +141,23 @@ const Block: Component = () => {
     // Another table's grid takes the request when it mounts.
     openRequestedRecord();
   }
+  const [routeSearch, setRouteSearch] =
+    createSearchParams(databaseDetailSearch);
+  followRouteLocation(
+    {
+      tableId: () => routeSearch.tableId,
+      viewId: () => routeSearch.viewId,
+    },
+    userId,
+    setSelection,
+    () => setRouteSearch({}, { mode: 'replace', history: 'replace' })
+  );
   createMethodRegistration(blockHandleSignal.get, {
     goToLocationFromParams: (params: Record<string, string>) => {
-      if (params.tableId && params.viewId)
-        setSelection((current) => ({
-          ...current,
-          tableId: params.tableId,
-          views: { ...current.views, [params.tableId]: params.viewId },
-        }));
+      // A link opened in the app (`webUrl()` on a table or view) names a
+      // table and maybe a view; a related record names its row instead.
+      if (params.tableId && !params.rowId)
+        selectLocation(setSelection, params.tableId, params.viewId);
       if (params.tableId && params.rowId)
         fireAndForget(
           openRelated({
@@ -159,14 +178,15 @@ const Block: Component = () => {
     setOpeningChat(true);
     // A locked model gets the picker's treatment: the chat opens on the plan's
     // model and the paywall says why.
-    const canUseDatabaseModel = modelsForPlan(hasPaidAccess()).includes(
-      DATABASE_MODEL
+    const canUseDatabaseModel = planIncludesModel(
+      DATABASE_MODEL,
+      hasPaidAccess()
     );
     const chat = databaseChat(toQuerySchema(current, activeTableId()));
     try {
       await openChatWithInput(chat.input, {
         instructions: chat.instructions,
-        ...(canUseDatabaseModel ? { model: DATABASE_MODEL } : {}),
+        model: databaseModelForPlan(hasPaidAccess()),
       });
       if (!canUseDatabaseModel) showPaywall(PaywallKey.O1_LIMIT);
     } finally {

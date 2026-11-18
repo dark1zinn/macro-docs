@@ -13,6 +13,7 @@ import {
   LOCAL_ONLY,
   PROD_MODE_ENV,
 } from '@core/constant/featureFlags';
+import { SELF_HOSTED } from '@core/constant/selfHosted';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import { getPlatform, isTauri } from '@core/util/platform';
 import {
@@ -250,7 +251,8 @@ const tryInitialize = (callback: VoidFunction) => {
 const createAnalytics = () => {
   const posthog = new PostHog();
 
-  const disabled = import.meta.env.DEV === true;
+  // A self-hosted install sends nothing to Macro's analytics or ad providers.
+  const disabled = import.meta.env.DEV === true || SELF_HOSTED;
   // Meta can submit events through hidden frames. Native navigation handlers
   // can mistake those loads for external links and open the system browser.
   const metaPixelEnabled = !isTauri();

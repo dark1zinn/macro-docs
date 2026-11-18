@@ -86,8 +86,16 @@ export function createEmailLogin(
   };
 
   const verify = async (value = code()) => {
+    if (!isCompleteCode(value)) return;
+    await submit(value);
+  };
+
+  /** Self-host: the operator's setup token in place of the emailed code. */
+  const verifySetupToken = (token: string) => submit(token.trim());
+
+  const submit = async (value: string) => {
     const address = email();
-    if (verifying() || !isCompleteCode(value) || !address) return;
+    if (verifying() || !value || !address) return;
     setVerifying(true);
     setVerifyError();
     const currentAttempt = attempt;
@@ -189,6 +197,8 @@ export function createEmailLogin(
     },
     submitEmail: () => fireAndForget(send(), 'email-login'),
     verify: (value?: string) => fireAndForget(verify(value), 'email-login'),
+    verifySetupToken: (token: string) =>
+      fireAndForget(verifySetupToken(token), 'email-login'),
     resend: async () => {
       setVerifyError();
       // A failed resend may be retried at once; a sent one restarts the wait.

@@ -59,8 +59,8 @@ pub enum InitGithubLinkError {
     /// Internal github error
     #[error("internal error occurred")]
     GithubServiceError(#[from] GithubError),
-    /// The identity provider was not found
-    #[error("identity provider not found")]
+    /// No `github` identity provider is configured on this deployment.
+    #[error("GitHub sign-in is not configured on this server")]
     IdentityProviderNotFound,
     /// The sign-in service could not be reached to look up the provider.
     #[error(transparent)]
@@ -77,9 +77,11 @@ impl IntoResponse for InitGithubLinkError {
             | InitGithubLinkError::GithubServiceError(GithubError::Upstream(error)) => {
                 return error.into_response();
             }
-            InitGithubLinkError::InternalError(_)
-            | InitGithubLinkError::GithubServiceError(_)
-            | InitGithubLinkError::IdentityProviderNotFound => StatusCode::INTERNAL_SERVER_ERROR,
+            // Not configured is a deployment state, not a failure.
+            InitGithubLinkError::IdentityProviderNotFound => StatusCode::SERVICE_UNAVAILABLE,
+            InitGithubLinkError::InternalError(_) | InitGithubLinkError::GithubServiceError(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
         };
 
         (
@@ -217,14 +219,8 @@ pub async fn init_github_link_handler(
         return Err(InitGithubLinkError::TooManyInProgressLinks);
     }
 
-    // Create in-progress link
-    let link_id = macro_db_client::in_progress_user_link::create_in_progress_user_link(
-        &ctx.db,
-        fusion_user_id,
-    )
-    .await?;
-
-    // Get Github integration identity provider ID from context
+    // Look the provider up before creating anything, so an unconfigured
+    // deployment doesn't accumulate pending links toward the limit above.
     let github_idp_id = &ctx
         .auth_client
         .get_identity_provider_id_by_name("github")
@@ -232,10 +228,17 @@ pub async fn init_github_link_handler(
         .map_err(|error| match error.upstream() {
             Some(upstream) => InitGithubLinkError::Upstream(upstream),
             None => {
-                tracing::error!(error=?error, "failed to look up the github identity provider");
+                tracing::warn!(error=?error, "no github identity provider is configured");
                 InitGithubLinkError::IdentityProviderNotFound
             }
         })?;
+
+    // Create in-progress link
+    let link_id = macro_db_client::in_progress_user_link::create_in_progress_user_link(
+        &ctx.db,
+        fusion_user_id,
+    )
+    .await?;
 
     // Build the signed OAuth state. The callback refuses state it did not sign,
     // state issued for another provider, and state whose pending link belongs

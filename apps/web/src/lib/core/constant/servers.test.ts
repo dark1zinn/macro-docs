@@ -52,6 +52,19 @@ it('preserves local-stack image references for the local attachment resolver', a
   );
 });
 
+it('logs a single-origin bundle out to its own login page', async () => {
+  vi.stubEnv('MODE', 'development');
+  vi.stubEnv('BASE_URL', '/app/');
+  vi.stubEnv('VITE_LOCAL_SERVERS', 'ALL');
+  vi.stubEnv('VITE_LOCAL_BACKEND_ORIGIN', 'same-origin');
+  vi.stubGlobal('location', new URL('https://docs.example.com/app/'));
+  vi.resetModules();
+  const { SERVER_HOSTS } = await import('./servers');
+  expect(SERVER_HOSTS['auth-logout']).toBe(
+    'https://docs.example.com/app/login'
+  );
+});
+
 // Only a self-contained local stack's proxy keeps instances' cookies apart.
 // `run_dev` serves the same proxy origin without those rules, and a hosted
 // build must never take the handoff even if local settings leaked into it.

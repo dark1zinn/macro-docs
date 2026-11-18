@@ -1,0 +1,272 @@
+import {
+  useAllowedEmailMutation,
+  useSelfHostInviteActionMutation,
+  useSelfHostSignupsQuery,
+  useSelfHostUsersQuery,
+  useSetSelfHostAdminMutation,
+  useSetSelfHostDisabledMutation,
+  useSetSelfHostPolicyMutation,
+} from '@queries/auth/selfhost';
+import type {
+  SelfHostAllowedEmail,
+  SelfHostUser,
+} from '@service-auth/selfhost';
+import { Button, Checkbox, Input, ToggleSwitch } from '@ui';
+import { createSignal, For, Show } from 'solid-js';
+import {
+  ChoiceRow,
+  SettingsCard,
+  SettingsPage,
+  SettingsRow,
+  SettingsSection,
+} from '../settings/primitives';
+import { AuditLogSection } from './AuditLogSection';
+import { InvitesSection, time, useNow } from './InvitesSection';
+import { MailSection } from './MailSection';
+
+const joined = (iso: string) =>
+  new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' });
+
+/** The last failed mutation's server explanation, until the next attempt. */
+function ErrorLine(props: { error: Error | null }) {
+  return (
+    <Show when={props.error}>
+      {(error) => (
+        <p class="px-4 py-2 text-sm text-failure" role="alert">
+          {error().message}
+        </p>
+      )}
+    </Show>
+  );
+}
+
+function UserRow(props: { user: SelfHostUser }) {
+  const setAdmin = useSetSelfHostAdminMutation();
+  const setDisabled = useSetSelfHostDisabledMutation();
+  const description = () =>
+    [
+      props.user.is_self ? 'You' : undefined,
+      props.user.created_at
+        ? `Joined ${joined(props.user.created_at)}`
+        : undefined,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+
+  return (
+    <>
+      <SettingsRow
+        label={props.user.email}
+        description={description()}
+        muted={props.user.disabled}
+        stackOnNarrow
+      >
+        <ToggleSwitch
+          size="md"
+          label="Admin"
+          checked={props.user.is_admin}
+          disabled={setAdmin.isPending}
+          onChange={(admin) =>
+            setAdmin.mutate({ userId: props.user.user_id, admin })
+          }
+        />
+        <ToggleSwitch
+          size="md"
+          label="Disabled"
+          checked={props.user.disabled}
+          disabled={props.user.is_self || setDisabled.isPending}
+          onChange={(disabled) =>
+            setDisabled.mutate({ userId: props.user.user_id, disabled })
+          }
+        />
+      </SettingsRow>
+      <ErrorLine error={setAdmin.error ?? setDisabled.error} />
+    </>
+  );
+}
+
+function UsersSection() {
+  const users = useSelfHostUsersQuery();
+
+  return (
+    <SettingsSection title="Users">
+      <SettingsCard>
+        <Show
+          when={users.data?.users}
+          fallback={
+            <SettingsRow
+              label={users.isError ? 'Could not load users' : 'Loading…'}
+              description={users.error?.message}
+            />
+          }
+        >
+          {(list) => (
+            <For each={list()}>{(user) => <UserRow user={user} />}</For>
+          )}
+        </Show>
+      </SettingsCard>
+    </SettingsSection>
+  );
+}
+
+function AllowedEmailRow(props: {
+  entry: SelfHostAllowedEmail;
+  now: number;
+  pending: boolean;
+  onInvite: () => void;
+  onRemove: () => void;
+}) {
+  // Invitations go out at most once a week per address; the server refuses sooner ones.
+  const waitUntil = () => {
+    const at = props.entry.invitable_at;
+    return at && new Date(at).getTime() > props.now ? at : undefined;
+  };
+  const description = () =>
+    [
+      `Added ${joined(props.entry.created_at)}`,
+      props.entry.last_invited_at
+        ? `invited ${time(props.entry.last_invited_at)}`
+        : undefined,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+
+  return (
+    <SettingsRow label={props.entry.email} description={description()}>
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled={props.pending || Boolean(waitUntil())}
+        title={(() => {
+          const at = waitUntil();
+          return at ? `Can be invited again after ${time(at)}` : undefined;
+        })()}
+        onClick={() => props.onInvite()}
+      >
+        Send invite
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled={props.pending}
+        onClick={() => props.onRemove()}
+      >
+        Remove
+      </Button>
+    </SettingsRow>
+  );
+}
+
+function SignupsSection() {
+  const signups = useSelfHostSignupsQuery();
+  const setPolicy = useSetSelfHostPolicyMutation();
+  const allowedEmail = useAllowedEmailMutation();
+  const invite = useSelfHostInviteActionMutation();
+  const now = useNow();
+  const [email, setEmail] = createSignal('');
+  const [notify, setNotify] = createSignal(true);
+
+  const add = (event: SubmitEvent) => {
+    event.preventDefault();
+    const value = email().trim();
+    if (!value) return;
+    allowedEmail.mutate(
+      { email: value, remove: false, notify: notify() },
+      { onSuccess: () => setEmail('') }
+    );
+  };
+
+  return (
+    <SettingsSection title="Sign-up">
+      <SettingsCard>
+        <div class="flex flex-col gap-2 p-4">
+          <ChoiceRow
+            name="selfhost-signup-policy"
+            value="invite_only"
+            title="Invite only"
+            description="New accounts need an allowed email below or a pending team invite."
+            checked={signups.data?.policy === 'invite_only'}
+            disabled={setPolicy.isPending}
+            onChange={() => setPolicy.mutate('invite_only')}
+          />
+          <ChoiceRow
+            name="selfhost-signup-policy"
+            value="open"
+            title="Open"
+            description="Anyone who can reach this server can create an account."
+            checked={signups.data?.policy === 'open'}
+            disabled={setPolicy.isPending}
+            onChange={() => setPolicy.mutate('open')}
+          />
+        </div>
+        <ErrorLine error={setPolicy.error} />
+      </SettingsCard>
+      <SettingsCard>
+        <SettingsRow
+          label="Allowed emails"
+          description="These addresses may create an account while sign-up is invite only."
+          stackOnNarrow
+        >
+          <form class="flex flex-wrap items-center gap-2" onSubmit={add}>
+            <Input
+              type="email"
+              size="sm"
+              placeholder="person@example.com"
+              value={email()}
+              onInput={(event) => setEmail(event.currentTarget.value)}
+            />
+            <Checkbox checked={notify()} onChange={setNotify}>
+              <Checkbox.Control />
+              <Checkbox.Label class="text-sm">
+                Email an invitation
+              </Checkbox.Label>
+            </Checkbox>
+            <Button
+              type="submit"
+              variant="secondary"
+              size="sm"
+              disabled={allowedEmail.isPending}
+            >
+              Allow
+            </Button>
+          </form>
+        </SettingsRow>
+        <For each={signups.data?.allowed_emails ?? []}>
+          {(entry) => (
+            <AllowedEmailRow
+              entry={entry}
+              now={now()}
+              pending={invite.isPending || allowedEmail.isPending}
+              onInvite={() =>
+                invite.mutate({
+                  kind: 'invite_allowed_email',
+                  email: entry.email,
+                })
+              }
+              onRemove={() =>
+                allowedEmail.mutate({ email: entry.email, remove: true })
+              }
+            />
+          )}
+        </For>
+        <ErrorLine error={allowedEmail.error ?? invite.error} />
+      </SettingsCard>
+    </SettingsSection>
+  );
+}
+
+/** Root administration of a self-hosted install: accounts, sign-up, invites, server mail, and the audit log. */
+export function SelfHostAdmin() {
+  return (
+    <SettingsPage
+      title="Self-host"
+      description="Manage the accounts on this server, who may sign up and how they are invited, read the mail it sends, and review admin actions."
+    >
+      <UsersSection />
+      <SignupsSection />
+      <InvitesSection />
+      <MailSection />
+      <AuditLogSection />
+    </SettingsPage>
+  );
+}

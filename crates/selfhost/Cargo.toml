@@ -1,0 +1,33 @@
+[package]
+edition = "2024"
+name = "selfhost"
+publish = false
+version = "0.1.0"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+csv = { workspace = true }
+entity_access = { path = "../entity_access", default-features = false }
+fusionauth = { path = "../fusionauth" }
+invite_email = { path = "../invite_email" }
+macro_env_var = { path = "../macro_env_var" }
+macro_user_id = { path = "../macro_user_id" }
+model-entity = { path = "../model-entity" }
+non_empty = { path = "../non_empty" }
+notification = { path = "../notification", default-features = false }
+reqwest = { workspace = true }
+roles_and_permissions = { path = "../roles_and_permissions" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true, features = ["json", "uuid"] }
+teams = { path = "../teams", default-features = false, features = ["ports"] }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true, features = ["serde"] }
+workspace-hack = { version = "0.1", path = "../workspace-hack" }
+
+[dev-dependencies]
+macro_db_migrator = { path = "../macro_db_migrator" }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

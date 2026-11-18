@@ -183,7 +183,15 @@ describe('editing event times', () => {
       true
     );
     try {
-      form.setField('end', form.state().end.replace('14:00', '15:00'));
+      // The form holds local wall-clock strings: add the hour in local time so
+      // the test means the same thing in every time zone.
+      const end = new Date(form.state().end);
+      end.setHours(end.getHours() + 1);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      form.setField(
+        'end',
+        `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}T${pad(end.getHours())}:${pad(end.getMinutes())}`
+      );
       const submitted = form.submitValues()!;
       expect(submitted.time.kind).toBe('timed');
       await editor.save(submitted);

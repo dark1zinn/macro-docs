@@ -1,5 +1,6 @@
 import { authorizeGithub } from '@core/auth/authorize-github';
 import { toast } from '@core/component/Toast/Toast';
+import { isIntegrationAvailable } from '@core/constant/selfHostedAiProviders';
 import { useIsAuthenticated } from '@core/context/user';
 import { useAddInboxFlow } from '@core/email-link';
 import { fireAndForget } from '@core/util/fireAndForget';
@@ -76,7 +77,10 @@ export function OnboardingConnectAccounts() {
         Connect More Accounts
       </h1>
       <div>
-        <div class="flex flex-col gap-2">
+        <div
+          class="flex flex-col gap-2"
+          hidden={!isIntegrationAvailable('google')}
+        >
           <Button
             variant="secondary"
             size="xl"
@@ -94,7 +98,10 @@ export function OnboardingConnectAccounts() {
 
         <div class="h-8" />
 
-        <div class="flex flex-col gap-2">
+        <div
+          class="flex flex-col gap-2"
+          hidden={!isIntegrationAvailable('github')}
+        >
           <Button
             variant="secondary"
             size="xl"

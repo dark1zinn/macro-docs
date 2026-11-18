@@ -18,6 +18,7 @@ export default {
   openInCurrentSplit: 'Open in current split',
   openFullscreen: 'Open fullscreen',
   rename: 'Rename',
+  askMacro: 'Ask Macro',
   setChannelPicture: 'Set channel picture',
   removeChannelPicture: 'Remove channel picture',
   favorite: 'Favorite',
@@ -107,6 +108,7 @@ export default {
   propertyOption: '{{property}}: {{option}}',
   actions: 'Actions',
   clear: 'Clear',
+  clearSelection: 'Clear selection',
   selectedCount: { other: '{{count}} selected' },
   undo: 'Undo',
 
@@ -189,6 +191,9 @@ export default {
     other: 'Unmuted {{succeeded}} of {{count}} items; {{failed}} failed',
   },
   toastUnmuteFailed: 'Failed to unmute notifications',
+  toastMentionsOnly: 'Notifying you for @mentions only',
+  toastAllMessages: 'Notifying you for all messages',
+  toastNotificationLevelFailed: 'Failed to update notifications',
   toastMarkedDone: 'Marked as done',
   toastMarkedDoneCount: {
     one: 'Marked {{count}} item as done',
@@ -202,6 +207,11 @@ export default {
     one: 'Marked {{completed}} of {{count}} item as done. Some changes could not be saved.',
     other:
       'Marked {{completed}} of {{count}} items as done. Some changes could not be saved.',
+  },
+  toastMarkedDoneNotificationsUnsaved: {
+    one: "Marked {{count}} item as done, but its notifications couldn't be cleared.",
+    other:
+      "Marked {{count}} items as done, but their notifications couldn't be cleared.",
   },
   toastMarkDoneUnsaved:
     'Some changes could not be saved. Undo will reverse the accepted changes.',
@@ -217,10 +227,6 @@ export default {
     other: 'Marked {{accepted}} of {{count}} items as not done',
   },
   toastMarkNotDoneFailed: 'Failed to mark as not done',
-  toastThreadStaysDone:
-    'This thread has no received messages, so it stays done',
-  toastThreadsStayDone:
-    'These threads have no received messages, so they stay done',
   toastCountNotRestored: { other: '{{count}} could not be restored.' },
   toastNotificationsNotRestored: 'Some notifications could not be restored.',
   toastWithWarnings: '{{message}}. {{warnings}}',
@@ -288,6 +294,10 @@ export default {
   toastGithubLinkCopyFailed: 'Could not copy GitHub link',
   toastBranchNameCopied: 'Branch name copied to clipboard',
   download: 'Download',
+  print: 'Print',
+  downloadAsDocx: 'Download DOCX',
+  presentationActions: 'Presentation actions',
+  documentActions: 'Document actions',
   copyGithubLink: 'Copy GitHub Link',
   prMerge: 'Merge',
   prMerging: 'Merging…',
@@ -306,4 +316,38 @@ export default {
   toastPrConvertToDraftFailed: 'Failed to convert pull request to a draft',
   toastPrClosed: 'Closed {{name}}',
   toastPrCloseFailed: 'Failed to close pull request',
+  toastProjectActionLoadFailed: 'Could not open this project action',
+  toastProjectRenamed: 'Project renamed',
+  toastProjectsDeleted: {
+    one: 'Project deleted',
+    other: 'Deleted {{count}} projects',
+  },
+
+  // Confirming a project delete.
+  deleteProjectsTitle: {
+    one: 'Delete project?',
+    other: 'Delete {{count}} projects?',
+  },
+  deleteProjectsDescription: {
+    one: 'The project and its activity will be deleted. Its tasks will remain in your workspace.',
+    other:
+      'These projects and their activity will be deleted. Their tasks will remain in your workspace.',
+  },
+  deleteProjectsLabel: {
+    one: 'Delete project',
+    other: 'Delete {{count}} projects',
+  },
+  deleteProjectsFailed: 'Could not delete. Please try again.',
+  deleteProjectsPartlyFailed: {
+    one: 'Deleted {{deleted}} of {{count}}. The rest could not be deleted.',
+    other: 'Deleted {{deleted}} of {{count}}. The rest could not be deleted.',
+  },
+
+  // Markdown document layout.
+  turnOnWideMode: 'Turn on wide mode',
+  turnOffWideMode: 'Turn off wide mode',
+
+  // HTML files in the code block.
+  showHtmlCode: 'Show code',
+  showHtmlRendered: 'Show rendered',
 };

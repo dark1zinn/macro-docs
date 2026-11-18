@@ -1,4 +1,5 @@
 import OpenAiIcon from '@core/component/AI/assets/openai.svg';
+import { isModelAvailable } from '@core/constant/selfHostedAiProviders';
 import ClaudeIcon from '@icon/wide-claude.svg';
 import GoogleIcon from '@phosphor-fill/google-logo-fill.svg';
 import { FreeTierModel } from '@service-cognition/generated/schemas/freeTierModel';
@@ -82,14 +83,27 @@ export const PAID_MODELS: readonly TModel[] = Object.values(Model);
  */
 export const DATABASE_MODEL: TModel = FREE_DEFAULT_MODEL;
 
-/** The default model for a user given their paid entitlement. */
+/**
+ * The plan's default model when the gateway can serve it, else the first
+ * selectable model it can serve.
+ */
 export function defaultModelForPlan(hasPaidAccess: boolean): TModel {
-  return hasPaidAccess ? DEFAULT_MODEL : FREE_DEFAULT_MODEL;
+  const preferred = hasPaidAccess ? DEFAULT_MODEL : FREE_DEFAULT_MODEL;
+  if (isModelAvailable(preferred)) return preferred;
+  return modelsForPlan(hasPaidAccess)[0] ?? preferred;
 }
 
-/** The selectable models for a user given their paid entitlement. */
+/** Whether the plan includes a model, regardless of provider availability. */
+export function planIncludesModel(
+  modelId: TModel,
+  hasPaidAccess: boolean
+): boolean {
+  return (hasPaidAccess ? PAID_MODELS : FREE_MODELS).includes(modelId);
+}
+
+/** The selectable models for a user, limited to providers the gateway serves. */
 export function modelsForPlan(hasPaidAccess: boolean): readonly TModel[] {
-  return hasPaidAccess ? PAID_MODELS : FREE_MODELS;
+  return (hasPaidAccess ? PAID_MODELS : FREE_MODELS).filter(isModelAvailable);
 }
 
 /** {@link DATABASE_MODEL} when the plan includes it, else the plan's default. */
@@ -144,5 +158,7 @@ export function alternateProviderModel(
 
   const candidates = options?.candidates;
   const pool = candidates && candidates.length > 0 ? candidates : PAID_MODELS;
-  return pool.find((id) => !excluded.has(MODEL_PROVIDER[id]));
+  return pool.find(
+    (id) => !excluded.has(MODEL_PROVIDER[id]) && isModelAvailable(id)
+  );
 }
