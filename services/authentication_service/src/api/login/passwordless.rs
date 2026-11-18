@@ -132,13 +132,19 @@ pub async fn handler(
                     }
 
                     // The user-created webhook re-checks the self-host policy
-                    // without the link; tell it this sign-up, which came with
-                    // one, already passed the check above.
+                    // without the link; when the link was what admitted this
+                    // sign-up, tell it so.
                     let mut data = serde_json::Map::new();
                     if req.is_agent {
                         data.insert(AGENT_SIGNUP_DATA_KEY.into(), true.into());
                     }
-                    if req.team_invite_link.is_some() && ctx.selfhost.is_some() {
+                    if crate::api::selfhost_admin::admitted_by_invite_link(
+                        &ctx,
+                        &lowercase_email,
+                        req.team_invite_link.as_deref(),
+                    )
+                    .await
+                    {
                         data.insert(
                             crate::api::selfhost_admin::INVITE_LINK_SIGNUP_DATA_KEY.into(),
                             true.into(),
