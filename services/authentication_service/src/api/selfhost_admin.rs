@@ -738,6 +738,21 @@ pub(crate) fn invite_link_signup(data: Option<&serde_json::Value>) -> bool {
         .unwrap_or(false)
 }
 
+/// Whether an allowed sign-up for `email` got in only through its invite
+/// link: self-host mode is on, a link came with it, and the email alone
+/// would be refused. Only then does the login handler set the flag above.
+pub(crate) async fn admitted_by_invite_link(
+    ctx: &ApiContext,
+    email: &str,
+    invite_link: Option<&str>,
+) -> bool {
+    let (Some(svc), Some(_)) = (ctx.selfhost.as_ref(), invite_link) else {
+        return false;
+    };
+    // A failed check sets no flag; the webhook then re-checks and refuses.
+    matches!(svc.authorize_signup(email, None).await, Ok(false))
+}
+
 /// Returns a denial response when self-host mode is on and the email may not
 /// sign up, given the workspace invite link it arrived with, if any. `None`
 /// means proceed, including whenever self-host mode is off.
